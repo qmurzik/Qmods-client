@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">QMods</string>
+
+    <string name="login_title">С возвращением</string>
+    <string name="login_subtitle">Войдите, чтобы продолжить</string>
+    <string name="login_field_username">Логин</string>
+    <string name="login_field_password">Пароль</string>
+    <string name="login_button">Войти</string>
+    <string name="login_error_empty_fields">Введите логин и пароль</string>
+
+    <string name="nav_home">Главная</string>
+    <string name="nav_subscription">Подписка</string>
+    <string name="nav_device">Устройство</string>
+    <string name="nav_payments">Платежи</string>
+    <string name="nav_profile">Профиль</string>
+
+    <string name="common_retry">Повторить</string>
+    <string name="common_cancel">Отмена</string>
+    <string name="common_confirm">Подтвердить</string>
+    <string name="common_close">Закрыть</string>
+    <string name="common_no_internet">Нет подключения к интернету</string>
+    <string name="common_unknown_error">Что-то пошло не так. Попробуйте ещё раз</string>
+    <string name="common_session_expired">Сессия истекла, войдите снова</string>
+    <string name="common_empty">Здесь пока пусто</string>
+    <string name="common_logout">Выйти из аккаунта</string>
+
+    <string name="subscription_active">Активна</string>
+    <string name="subscription_inactive">Не активна</string>
+    <string name="subscription_days_left">Осталось дней: %1$d</string>
+    <string name="subscription_expires_on">Действует до %1$s</string>
+    <string name="subscription_plans_title">Тарифы</string>
+    <string name="subscription_choose_plan">Выбрать тариф</string>
+
+    <string name="device_title">Моё устройство</string>
+    <string name="device_unlink_button">Отвязать устройство</string>
+    <string name="device_unlink_confirm_title">Отвязать устройство?</string>
+    <string name="device_unlink_confirm_text">Это устройство больше не сможет использовать активную сессию QMods. Вы сможете привязать его снова позже.</string>
+    <string name="device_unlink_success">Устройство успешно отвязано</string>
+    <string name="device_no_device">Устройство не привязано</string>
+
+    <string name="payments_title">История платежей</string>
+    <string name="payments_empty">Платежей пока нет</string>
+
+    <string name="profile_title">Профиль</string>
+    <string name="notifications_title">Уведомления</string>
+    <string name="notifications_empty">Уведомлений нет</string>
+    <string name="notifications_mark_read">Отметить как прочитанное</string>
+</resources>

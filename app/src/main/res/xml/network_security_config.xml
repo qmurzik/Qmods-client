@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Blocks cleartext (HTTP) traffic app-wide - only HTTPS is allowed.
+  SSL certificate pinning for qmods.ru is implemented in code (see di/NetworkModule.kt /
+  Constants.CERTIFICATE_PINS) rather than here, because a wrong/expired pin baked into a
+  manifest-referenced XML resource cannot be fixed without a full app update and would
+  otherwise hard-fail 100% of API traffic. See NetworkModule.kt for how to enable it safely.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

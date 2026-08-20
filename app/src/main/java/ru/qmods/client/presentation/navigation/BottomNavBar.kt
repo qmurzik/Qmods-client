@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -22,8 +23,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.ui.unit.dp
@@ -64,7 +65,14 @@ fun QModsBottomNavBar(navController: NavHostController) {
                 selected = selected,
                 onClick = {
                     navController.navigate(item.screen.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
+                        // Anchor on Home (the graph's *effective* home once past auth), not
+                        // the NavHost's literal startDestination (Splash) - Splash is popped
+                        // with inclusive=true right after first launch, so popUpTo-ing to its
+                        // id later matches nothing in the back stack. That silently broke the
+                        // save/restore-state contract below: each tab switch was landing on a
+                        // fresh back stack entry instead of the saved one, recreating every
+                        // screen's ViewModel (and re-firing its network calls) on every tap.
+                        popUpTo(Screen.Home.route) {
                             saveState = true
                         }
                         launchSingleTop = true
@@ -78,7 +86,12 @@ fun QModsBottomNavBar(navController: NavHostController) {
                     )
                 },
                 label = {
-                    Text(text = stringResource(id = item.labelRes))
+                    Text(
+                        text = stringResource(id = item.labelRes),
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = AccentVioletStart,

@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarToday
-import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,7 +41,6 @@ import ru.qmods.client.presentation.components.SkeletonList
 import ru.qmods.client.presentation.components.SolidCard
 import ru.qmods.client.presentation.theme.ErrorRed
 import ru.qmods.client.presentation.theme.QModsGradients
-import ru.qmods.client.presentation.theme.SurfaceBorder
 import ru.qmods.client.presentation.theme.TextOnAccent
 import ru.qmods.client.presentation.theme.TextPrimary
 import ru.qmods.client.presentation.theme.TextSecondary
@@ -98,22 +95,13 @@ fun ProfileScreen(
                                     color = TextOnAccent,
                                     fontWeight = FontWeight.SemiBold
                                 )
-                                state.user?.email?.let {
-                                    Text(text = it, style = MaterialTheme.typography.bodyMedium, color = TextOnAccent.copy(alpha = 0.85f))
-                                }
                             }
                         }
                     }
 
-                    SolidCard(modifier = Modifier.fillMaxWidth()) {
-                        Column {
-                            state.user?.registeredAt?.let {
-                                ProfileInfoRow(Icons.Rounded.CalendarToday, "Дата регистрации", it)
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = SurfaceBorder)
-                            }
-                            state.user?.email?.let {
-                                ProfileInfoRow(Icons.Rounded.Email, "Email", it)
-                            }
+                    state.user?.registeredAt?.let {
+                        SolidCard(modifier = Modifier.fillMaxWidth()) {
+                            ProfileInfoRow(Icons.Rounded.CalendarToday, "Дата регистрации", it)
                         }
                     }
 

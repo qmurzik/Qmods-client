@@ -19,8 +19,9 @@ class ProfileRepositoryImpl @Inject constructor(
         return when (val result = safeApiCall(connectivityObserver) { api.getProfile() }) {
             is Resource.Success -> {
                 val body = result.data
-                if (body.success) {
-                    Resource.Success(body.toDomain())
+                val user = body.user
+                if (body.success && user != null) {
+                    Resource.Success(user.toDomain())
                 } else {
                     Resource.Error(body.message ?: "Не удалось загрузить профиль", ErrorType.SERVER)
                 }

@@ -7,9 +7,14 @@ import kotlinx.serialization.Serializable
 data class ProfileResponseDto(
     @SerialName("success") val success: Boolean = false,
     @SerialName("message") val message: String? = null,
-    @SerialName("id") val id: String? = null,
-    @SerialName("login") val login: String? = null,
-    @SerialName("email") val email: String? = null,
-    @SerialName("registered_at") val registeredAt: String? = null,
-    @SerialName("avatar_url") val avatarUrl: String? = null
+    @SerialName("user") val user: UserDto? = null
+)
+
+@Serializable
+data class UserDto(
+    @SerialName("id") val id: String = "",
+    @SerialName("login") val login: String = "",
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    @SerialName("created_at") val createdAt: Long = 0
 )

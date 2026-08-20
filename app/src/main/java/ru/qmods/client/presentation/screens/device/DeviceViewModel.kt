@@ -23,7 +23,8 @@ data class DeviceUiState(
     val errorType: ErrorType? = null,
     val showUnlinkConfirm: Boolean = false,
     val isUnlinking: Boolean = false,
-    val unlinkSuccessMessage: String? = null
+    val unlinkSuccessMessage: String? = null,
+    val unlinkErrorMessage: String? = null
 )
 
 @HiltViewModel
@@ -63,7 +64,7 @@ class DeviceViewModel @Inject constructor(
                     )
                 }
                 is Resource.Error -> _uiState.update {
-                    it.copy(isUnlinking = false, showUnlinkConfirm = false, errorMessage = result.message, errorType = result.type)
+                    it.copy(isUnlinking = false, showUnlinkConfirm = false, unlinkErrorMessage = result.message)
                 }
                 is Resource.Loading -> Unit
             }
@@ -72,6 +73,10 @@ class DeviceViewModel @Inject constructor(
 
     fun consumeSuccessMessage() {
         _uiState.update { it.copy(unlinkSuccessMessage = null) }
+    }
+
+    fun dismissUnlinkError() {
+        _uiState.update { it.copy(unlinkErrorMessage = null) }
     }
 
     private fun load(isRefresh: Boolean = false) {

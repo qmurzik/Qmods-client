@@ -31,16 +31,10 @@ class SubscriptionRepositoryImpl @Inject constructor(
         }
     }
 
+    /** subscription/plans returns a bare JSON array - there's no {success,...} envelope to check. */
     override suspend fun getPlans(): Resource<List<Plan>> {
         return when (val result = safeApiCall(connectivityObserver) { api.getSubscriptionPlans() }) {
-            is Resource.Success -> {
-                val body = result.data
-                if (body.success) {
-                    Resource.Success(body.plans.map { it.toDomain() })
-                } else {
-                    Resource.Error(body.message ?: "Не удалось загрузить тарифы", ErrorType.SERVER)
-                }
-            }
+            is Resource.Success -> Resource.Success(result.data.map { it.toDomain() })
             is Resource.Error -> Resource.Error(result.message, result.type)
             is Resource.Loading -> Resource.Loading()
         }

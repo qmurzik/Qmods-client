@@ -12,10 +12,10 @@ data class DeviceResponseDto(
 
 @Serializable
 data class DeviceDto(
-    @SerialName("device_id") val deviceId: String = "",
+    @SerialName("id") val id: String = "",
     @SerialName("model") val model: String? = null,
     @SerialName("android_version") val androidVersion: String? = null,
     @SerialName("client_version") val clientVersion: String? = null,
-    @SerialName("linked_at") val linkedAt: String? = null,
-    @SerialName("last_seen_at") val lastSeenAt: String? = null
+    @SerialName("linked_at") val linkedAt: Long = 0,
+    @SerialName("last_seen") val lastSeen: Long = 0
 )

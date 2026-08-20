@@ -123,7 +123,7 @@ private fun PlanCard(plan: Plan) {
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "${plan.price.toDisplayString()} ${plan.currency}",
+                text = "${plan.priceRub} ₽",
                 style = MaterialTheme.typography.displayMedium,
                 color = if (plan.isPopular) TextOnAccent else TextPrimary
             )
@@ -148,6 +148,3 @@ private fun PlanCard(plan: Plan) {
         }
     }
 }
-
-private fun Double.toDisplayString(): String =
-    if (this == this.toLong().toDouble()) this.toLong().toString() else this.toString()

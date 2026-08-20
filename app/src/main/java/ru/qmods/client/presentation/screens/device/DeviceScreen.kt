@@ -17,10 +17,12 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -44,6 +46,7 @@ import ru.qmods.client.presentation.components.SolidCard
 import ru.qmods.client.presentation.theme.AccentCyan
 import ru.qmods.client.presentation.theme.ErrorRed
 import ru.qmods.client.presentation.theme.SurfaceBorder
+import ru.qmods.client.presentation.theme.SurfaceCard
 import ru.qmods.client.presentation.theme.TextPrimary
 import ru.qmods.client.presentation.theme.TextSecondary
 
@@ -120,6 +123,20 @@ fun DeviceScreen(
             onConfirm = viewModel::confirmUnlink,
             onDismiss = viewModel::dismissUnlinkConfirm,
             isLoading = state.isUnlinking
+        )
+    }
+
+    state.unlinkErrorMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissUnlinkError,
+            containerColor = SurfaceCard,
+            title = { Text(text = "Не удалось отвязать устройство", color = TextPrimary) },
+            text = { Text(text = message, color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissUnlinkError) {
+                    Text(text = stringResource(id = R.string.common_close), color = TextPrimary)
+                }
+            }
         )
     }
 }

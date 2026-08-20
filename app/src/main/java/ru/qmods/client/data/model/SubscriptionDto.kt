@@ -7,25 +7,22 @@ import kotlinx.serialization.Serializable
 data class SubscriptionResponseDto(
     @SerialName("success") val success: Boolean = false,
     @SerialName("message") val message: String? = null,
-    @SerialName("active") val active: Boolean = false,
-    @SerialName("plan_name") val planName: String? = null,
-    @SerialName("expires_at") val expiresAt: String? = null,
+    @SerialName("status") val status: String? = null,
+    @SerialName("plan") val plan: String? = null,
+    @SerialName("plan_title") val planTitle: String? = null,
+    @SerialName("expires_at") val expiresAt: Long = 0,
     @SerialName("days_left") val daysLeft: Int = 0
 )
 
-@Serializable
-data class PlansResponseDto(
-    @SerialName("success") val success: Boolean = false,
-    @SerialName("message") val message: String? = null,
-    @SerialName("plans") val plans: List<PlanDto> = emptyList()
-)
-
+/**
+ * GET subscription/plans returns a bare JSON array (no {success, plans:[...]} wrapper),
+ * so this is deserialized directly as List<PlanDto> - see QModsApiService.
+ */
 @Serializable
 data class PlanDto(
     @SerialName("id") val id: String = "",
-    @SerialName("name") val name: String = "",
-    @SerialName("price") val price: Double = 0.0,
-    @SerialName("currency") val currency: String = "RUB",
+    @SerialName("title") val title: String = "",
+    @SerialName("price_rub") val priceRub: Int = 0,
     @SerialName("duration_days") val durationDays: Int = 0,
-    @SerialName("is_popular") val isPopular: Boolean = false
+    @SerialName("recommended") val recommended: Boolean = false
 )

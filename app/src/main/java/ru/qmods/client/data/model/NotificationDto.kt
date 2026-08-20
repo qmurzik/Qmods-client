@@ -14,7 +14,8 @@ data class NotificationsResponseDto(
 data class NotificationDto(
     @SerialName("id") val id: String = "",
     @SerialName("title") val title: String? = null,
-    @SerialName("message") val message: String = "",
-    @SerialName("date") val date: String? = null,
-    @SerialName("is_read") val isRead: Boolean = false
+    @SerialName("body") val body: String = "",
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("read") val read: Boolean = false,
+    @SerialName("type") val type: String? = null
 )

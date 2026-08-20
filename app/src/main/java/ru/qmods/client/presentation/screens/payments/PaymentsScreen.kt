@@ -99,7 +99,7 @@ private fun PaymentRow(payment: Payment) {
 
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "${payment.amount.toDisplayAmount()} ${payment.currency}",
+                    text = "${payment.amountRub} ₽",
                     style = MaterialTheme.typography.titleMedium,
                     color = TextPrimary
                 )
@@ -109,9 +109,6 @@ private fun PaymentRow(payment: Payment) {
         }
     }
 }
-
-private fun Double.toDisplayAmount(): String =
-    if (this == this.toLong().toDouble()) this.toLong().toString() else this.toString()
 
 private fun PaymentStatus.toLabelAndColor(): Pair<String, androidx.compose.ui.graphics.Color> = when (this) {
     PaymentStatus.SUCCESS -> "Оплачено" to SuccessGreen

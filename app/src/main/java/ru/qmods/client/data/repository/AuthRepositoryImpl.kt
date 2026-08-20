@@ -53,7 +53,13 @@ class AuthRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * Best-effort server-side session invalidation - logout must never get stuck because the
+     * network is down, so any failure here is swallowed and the local session is cleared
+     * regardless.
+     */
     override suspend fun logout() {
+        runCatching { api.logout() }
         sessionManager.clearSession()
     }
 

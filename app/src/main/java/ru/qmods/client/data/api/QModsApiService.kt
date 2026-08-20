@@ -11,21 +11,28 @@ import ru.qmods.client.data.model.LoginRequestDto
 import ru.qmods.client.data.model.LoginResponseDto
 import ru.qmods.client.data.model.NotificationsResponseDto
 import ru.qmods.client.data.model.PaymentsResponseDto
-import ru.qmods.client.data.model.PlansResponseDto
+import ru.qmods.client.data.model.PlanDto
 import ru.qmods.client.data.model.ProfileResponseDto
 import ru.qmods.client.data.model.SubscriptionResponseDto
 
 /**
- * Every path below is resolved against the base URL "https://qmods.ru/api/", so e.g.
- * "client_api.php/profile" hits https://qmods.ru/api/client_api.php/profile - i.e. the
- * router is expected to dispatch on PATH_INFO after client_api.php. If the real backend
- * instead routes via a query parameter (client_api.php?action=profile), only the
- * `@GET`/`@POST` path strings here need to change - nothing else in the app depends on it.
+ * Every path below is resolved against BuildConfig.API_BASE_URL ("https://qmods.ru/mod/api/"),
+ * e.g. "client_api.php/profile" hits .../mod/api/client_api.php/profile. client_api.php's own
+ * router strips everything up to and including "/api/client_api.php/" via regex, so it doesn't
+ * care what comes before "/api/" - see client_api.php line ~21.
+ *
+ * NOTE: client_api.php has no `case 'device/unlink':` route at all (verified against the real
+ * source) - unlinkDevice() below will 404 until that's added server-side. The app handles that
+ * as a normal server error rather than crashing, but the button won't actually unlink anything
+ * until the endpoint exists.
  */
 interface QModsApiService {
 
     @POST("client_api.php/login")
     suspend fun login(@Body request: LoginRequestDto): Response<LoginResponseDto>
+
+    @POST("client_api.php/logout")
+    suspend fun logout(): Response<GenericResponseDto>
 
     @GET("client_api.php/profile")
     suspend fun getProfile(): Response<ProfileResponseDto>
@@ -33,8 +40,9 @@ interface QModsApiService {
     @GET("client_api.php/subscription")
     suspend fun getSubscription(): Response<SubscriptionResponseDto>
 
+    /** Bare JSON array response - no {success, plans:[...]} wrapper. */
     @GET("client_api.php/subscription/plans")
-    suspend fun getSubscriptionPlans(): Response<PlansResponseDto>
+    suspend fun getSubscriptionPlans(): Response<List<PlanDto>>
 
     @GET("client_api.php/payments")
     suspend fun getPayments(): Response<PaymentsResponseDto>

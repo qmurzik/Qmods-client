@@ -9,8 +9,8 @@ import okhttp3.CertificatePinner
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import ru.qmods.client.BuildConfig
 import ru.qmods.client.data.api.AuthInterceptor
 import ru.qmods.client.data.api.QModsApiService

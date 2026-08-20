@@ -1,8 +1,11 @@
 package ru.qmods.client.presentation.screens.subscription
 
+import android.content.Context
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,17 +19,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.qmods.client.R
@@ -35,10 +44,12 @@ import ru.qmods.client.domain.util.ErrorType
 import ru.qmods.client.presentation.components.EmptyState
 import ru.qmods.client.presentation.components.ErrorState
 import ru.qmods.client.presentation.components.GradientCard
+import ru.qmods.client.presentation.components.PrimaryButton
 import ru.qmods.client.presentation.components.SkeletonList
 import ru.qmods.client.presentation.components.SolidCard
 import ru.qmods.client.presentation.theme.AccentGold
 import ru.qmods.client.presentation.theme.QModsGradients
+import ru.qmods.client.presentation.theme.SurfaceCard
 import ru.qmods.client.presentation.theme.TextOnAccent
 import ru.qmods.client.presentation.theme.TextPrimary
 import ru.qmods.client.presentation.theme.TextSecondary
@@ -49,6 +60,15 @@ fun PlansScreen(
     viewModel: PlansViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    LaunchedEffect(state.paymentUrlToOpen) {
+        val url = state.paymentUrlToOpen
+        if (url != null) {
+            openInCustomTab(context, url)
+            viewModel.consumePaymentUrl()
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -80,19 +100,50 @@ fun PlansScreen(
 
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+                contentPadding = PaddingValues(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 itemsIndexed(state.plans, key = { index, item -> item.id.ifBlank { index.toString() } }) { _, plan ->
-                    PlanCard(plan)
+                    PlanCard(
+                        plan = plan,
+                        isPurchasing = state.purchasingPlanId == plan.id,
+                        isAnyPurchaseInProgress = state.purchasingPlanId != null,
+                        onBuy = { viewModel.purchase(plan.id) }
+                    )
                 }
             }
         }
     }
+
+    state.purchaseErrorMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPurchaseError,
+            containerColor = SurfaceCard,
+            title = { Text(text = "Не удалось начать оплату", color = TextPrimary) },
+            text = { Text(text = message, color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPurchaseError) {
+                    Text(text = stringResource(id = R.string.common_close), color = TextPrimary)
+                }
+            }
+        )
+    }
+}
+
+private fun openInCustomTab(context: Context, url: String) {
+    CustomTabsIntent.Builder()
+        .setShowTitle(true)
+        .build()
+        .launchUrl(context, url.toUri())
 }
 
 @Composable
-private fun PlanCard(plan: Plan) {
+private fun PlanCard(
+    plan: Plan,
+    isPurchasing: Boolean,
+    isAnyPurchaseInProgress: Boolean,
+    onBuy: () -> Unit
+) {
     val content: @Composable () -> Unit = {
         Column {
             Row(
@@ -135,11 +186,20 @@ private fun PlanCard(plan: Plan) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (plan.isPopular) TextOnAccent.copy(alpha = 0.85f) else TextSecondary
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            PrimaryButton(
+                text = stringResource(id = R.string.subscription_buy_plan),
+                onClick = onBuy,
+                isLoading = isPurchasing,
+                enabled = !isAnyPurchaseInProgress
+            )
         }
     }
 
     if (plan.isPopular) {
-        GradientCard(backgroundBrush = QModsGradients.primaryBrand, borderColor = androidx.compose.ui.graphics.Color.Transparent, modifier = Modifier.fillMaxWidth()) {
+        GradientCard(backgroundBrush = QModsGradients.primaryBrand, borderColor = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
             content()
         }
     } else {

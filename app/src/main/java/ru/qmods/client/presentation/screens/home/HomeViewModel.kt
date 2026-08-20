@@ -3,6 +3,8 @@ package ru.qmods.client.presentation.screens.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,8 +48,12 @@ class HomeViewModel @Inject constructor(
                 if (isRefresh) it.copy(isRefreshing = true) else it.copy(isLoading = true)
             }
 
-            val profileResult = getProfileUseCase()
-            val subscriptionResult = getSubscriptionUseCase()
+            // Independent requests - fire together instead of paying two round-trips back to back.
+            val (profileResult, subscriptionResult) = coroutineScope {
+                val profileDeferred = async { getProfileUseCase() }
+                val subscriptionDeferred = async { getSubscriptionUseCase() }
+                profileDeferred.await() to subscriptionDeferred.await()
+            }
 
             val user = (profileResult as? Resource.Success)?.data
             val subscription = (subscriptionResult as? Resource.Success)?.data

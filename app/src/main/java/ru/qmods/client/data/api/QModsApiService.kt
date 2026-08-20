@@ -13,6 +13,8 @@ import ru.qmods.client.data.model.NotificationsResponseDto
 import ru.qmods.client.data.model.PaymentsResponseDto
 import ru.qmods.client.data.model.PlanDto
 import ru.qmods.client.data.model.ProfileResponseDto
+import ru.qmods.client.data.model.RenewSubscriptionRequestDto
+import ru.qmods.client.data.model.RenewSubscriptionResponseDto
 import ru.qmods.client.data.model.SubscriptionResponseDto
 
 /**
@@ -43,6 +45,10 @@ interface QModsApiService {
     /** Bare JSON array response - no {success, plans:[...]} wrapper. */
     @GET("client_api.php/subscription/plans")
     suspend fun getSubscriptionPlans(): Response<List<PlanDto>>
+
+    /** Creates a pending order and returns a YooMoney quickpay URL to open in a browser. */
+    @POST("client_api.php/subscription/renew")
+    suspend fun renewSubscription(@Body request: RenewSubscriptionRequestDto): Response<RenewSubscriptionResponseDto>
 
     @GET("client_api.php/payments")
     suspend fun getPayments(): Response<PaymentsResponseDto>

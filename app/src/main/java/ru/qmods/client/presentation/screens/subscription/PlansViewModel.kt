@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.qmods.client.domain.model.Plan
 import ru.qmods.client.domain.usecase.GetPlansUseCase
+import ru.qmods.client.domain.usecase.RenewSubscriptionUseCase
 import ru.qmods.client.domain.util.ErrorType
 import ru.qmods.client.domain.util.Resource
 import javax.inject.Inject
@@ -19,12 +20,16 @@ data class PlansUiState(
     val isRefreshing: Boolean = false,
     val plans: List<Plan> = emptyList(),
     val errorMessage: String? = null,
-    val errorType: ErrorType? = null
+    val errorType: ErrorType? = null,
+    val purchasingPlanId: String? = null,
+    val purchaseErrorMessage: String? = null,
+    val paymentUrlToOpen: String? = null
 )
 
 @HiltViewModel
 class PlansViewModel @Inject constructor(
-    private val getPlansUseCase: GetPlansUseCase
+    private val getPlansUseCase: GetPlansUseCase,
+    private val renewSubscriptionUseCase: RenewSubscriptionUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlansUiState())
@@ -35,6 +40,32 @@ class PlansViewModel @Inject constructor(
     }
 
     fun refresh() = load(isRefresh = true)
+
+    fun purchase(planId: String) {
+        if (_uiState.value.purchasingPlanId != null) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(purchasingPlanId = planId, purchaseErrorMessage = null) }
+
+            when (val result = renewSubscriptionUseCase(planId)) {
+                is Resource.Success -> _uiState.update {
+                    it.copy(purchasingPlanId = null, paymentUrlToOpen = result.data.paymentUrl)
+                }
+                is Resource.Error -> _uiState.update {
+                    it.copy(purchasingPlanId = null, purchaseErrorMessage = result.message)
+                }
+                is Resource.Loading -> Unit
+            }
+        }
+    }
+
+    fun consumePaymentUrl() {
+        _uiState.update { it.copy(paymentUrlToOpen = null) }
+    }
+
+    fun dismissPurchaseError() {
+        _uiState.update { it.copy(purchaseErrorMessage = null) }
+    }
 
     private fun load(isRefresh: Boolean = false) {
         viewModelScope.launch {

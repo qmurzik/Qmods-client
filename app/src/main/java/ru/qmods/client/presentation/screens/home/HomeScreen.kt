@@ -39,6 +39,7 @@ import ru.qmods.client.R
 import ru.qmods.client.domain.util.ErrorType
 import ru.qmods.client.presentation.components.ErrorState
 import ru.qmods.client.presentation.components.GradientCard
+import ru.qmods.client.presentation.components.OnResumeRefresh
 import ru.qmods.client.presentation.components.RefreshableScreen
 import ru.qmods.client.presentation.components.SkeletonList
 import ru.qmods.client.presentation.components.SolidCard
@@ -58,6 +59,8 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    OnResumeRefresh(onResume = viewModel::refresh)
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(

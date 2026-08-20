@@ -31,6 +31,7 @@
     <string name="subscription_expires_on">Действует до %1$s</string>
     <string name="subscription_plans_title">Тарифы</string>
     <string name="subscription_choose_plan">Выбрать тариф</string>
+    <string name="subscription_buy_plan">Оплатить</string>
 
     <string name="device_title">Моё устройство</string>
     <string name="device_unlink_button">Отвязать устройство</string>

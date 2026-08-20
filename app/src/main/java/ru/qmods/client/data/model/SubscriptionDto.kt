@@ -26,3 +26,16 @@ data class PlanDto(
     @SerialName("duration_days") val durationDays: Int = 0,
     @SerialName("recommended") val recommended: Boolean = false
 )
+
+@Serializable
+data class RenewSubscriptionRequestDto(
+    @SerialName("plan_id") val planId: String
+)
+
+@Serializable
+data class RenewSubscriptionResponseDto(
+    @SerialName("success") val success: Boolean = false,
+    @SerialName("message") val message: String? = null,
+    @SerialName("payment_url") val paymentUrl: String? = null,
+    @SerialName("label") val label: String? = null
+)

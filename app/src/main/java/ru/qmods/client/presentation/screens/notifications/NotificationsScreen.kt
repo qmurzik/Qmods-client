@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -84,7 +84,7 @@ fun NotificationsScreen(
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(state.notifications, key = { it.id }) { notification ->
+                itemsIndexed(state.notifications, key = { index, item -> item.id.ifBlank { index.toString() } }) { _, notification ->
                     NotificationRow(notification, onClick = { viewModel.markAsRead(notification.id) })
                 }
             }

@@ -12,7 +12,7 @@ data class DeviceResponseDto(
 
 @Serializable
 data class DeviceDto(
-    @SerialName("device_id") val deviceId: String,
+    @SerialName("device_id") val deviceId: String = "",
     @SerialName("model") val model: String? = null,
     @SerialName("android_version") val androidVersion: String? = null,
     @SerialName("client_version") val clientVersion: String? = null,

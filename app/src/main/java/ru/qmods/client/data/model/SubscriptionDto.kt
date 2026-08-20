@@ -22,8 +22,8 @@ data class PlansResponseDto(
 
 @Serializable
 data class PlanDto(
-    @SerialName("id") val id: String,
-    @SerialName("name") val name: String,
+    @SerialName("id") val id: String = "",
+    @SerialName("name") val name: String = "",
     @SerialName("price") val price: Double = 0.0,
     @SerialName("currency") val currency: String = "RUB",
     @SerialName("duration_days") val durationDays: Int = 0,

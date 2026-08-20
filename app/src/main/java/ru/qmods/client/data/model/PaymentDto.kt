@@ -12,8 +12,8 @@ data class PaymentsResponseDto(
 
 @Serializable
 data class PaymentDto(
-    @SerialName("id") val id: String,
-    @SerialName("date") val date: String,
+    @SerialName("id") val id: String = "",
+    @SerialName("date") val date: String = "",
     @SerialName("amount") val amount: Double = 0.0,
     @SerialName("currency") val currency: String = "RUB",
     @SerialName("plan_name") val planName: String? = null,

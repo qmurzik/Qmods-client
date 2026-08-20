@@ -12,7 +12,7 @@ data class NotificationsResponseDto(
 
 @Serializable
 data class NotificationDto(
-    @SerialName("id") val id: String,
+    @SerialName("id") val id: String = "",
     @SerialName("title") val title: String? = null,
     @SerialName("message") val message: String = "",
     @SerialName("date") val date: String? = null,

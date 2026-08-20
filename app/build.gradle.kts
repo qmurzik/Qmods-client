@@ -20,7 +20,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "API_BASE_URL", "\"https://qmods.ru/api/\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://qmods.ru/mod/api/\"")
         buildConfigField("String", "CLIENT_VERSION", "\"$versionName\"")
     }
 

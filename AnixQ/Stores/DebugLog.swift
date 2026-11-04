@@ -12,6 +12,13 @@ enum DebugLog {
         return file
     }()
 
+    static var fileURL: URL { url }
+
+    static func read() -> String {
+        queue.sync {}
+        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    }
+
     static func log(_ message: String) {
         let line = String(format: "[%7.2fs] ", Date().timeIntervalSince(start)) + message + "\n"
         #if DEBUG

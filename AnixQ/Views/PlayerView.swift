@@ -444,7 +444,8 @@ struct WebPlayer: UIViewRepresentable {
           function post(m){ try{ window.webkit.messageHandlers.dbg.postMessage(m); }catch(e){} }
           ['playing','waiting','error','loadedmetadata','stalled'].forEach(function(ev){
             document.addEventListener(ev, function(e){
-              var t=e.target; post(ev+' '+location.host+' '+((t&&t.currentSrc)||'').slice(0,80));
+              var t=e.target; if(!(t instanceof HTMLMediaElement)) return;
+              post(ev+' '+location.host+' '+((t&&t.currentSrc)||'').slice(0,80));
             }, true);
           });
         })();

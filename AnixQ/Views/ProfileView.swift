@@ -86,6 +86,16 @@ struct ProfileView: View {
             }
 
             Section {
+                NavigationLink {
+                    DiagnosticsView()
+                } label: {
+                    Label("Диагностика плеера", systemImage: "stethoscope")
+                }
+            } footer: {
+                Text("Журнал загрузки видео за текущий запуск. Если плеер тормозит — отправьте его разработчику.")
+            }
+
+            Section {
                 Text("AnixQ — неофициальный клиент. Каталог и видео предоставляются сервисом Anixart и его плеерами.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -183,5 +193,35 @@ struct LoginView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+struct DiagnosticsView: View {
+    @State private var text = ""
+    @AppStorage("adblock") private var adblock = true
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("Блокировать рекламные сети в Kodik", isOn: $adblock)
+            } footer: {
+                Text("Если Kodik показывает рекламу, но не запускает серию — попробуйте выключить.")
+            }
+            Section("Журнал") {
+                Text(text.isEmpty ? "Пусто — откройте серию и вернитесь сюда." : text)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.background.ignoresSafeArea())
+        .navigationTitle("Диагностика")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                ShareLink(item: text.isEmpty ? "empty" : text) { Image(systemName: "square.and.arrow.up") }
+            }
+        }
+        .onAppear { text = DebugLog.read() }
+        .refreshable { text = DebugLog.read() }
     }
 }

@@ -92,8 +92,12 @@ enum LibAPI {
                 if status == 204 || data.isEmpty { return JSON() }
                 guard (200..<300).contains(status) else {
                     if (400..<500).contains(status) {
-                        let msg = (try? JSONSerialization.jsonObject(with: data)).map { String(describing: $0) } ?? ""
-                        DebugLog.log("lib: \(method) \(path) -> \(status) \(msg.prefix(200))")
+                        // Re-serialise so Cyrillic validation messages are readable (server sends \uXXXX).
+                        let msg = (try? JSONSerialization.jsonObject(with: data))
+                            .flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+                            .flatMap { String(data: $0.prefix(600), encoding: .utf8) }
+                            ?? String(data: data.prefix(400), encoding: .utf8) ?? ""
+                        DebugLog.log("lib: \(method) \(path) -> \(status) \(msg)")
                         throw LibError.badStatus(status)
                     }
                     lastError = LibError.badStatus(status)
@@ -329,9 +333,7 @@ enum LibAPI {
             URLQueryItem(name: "user_id", value: String(uid)),
             URLQueryItem(name: "status", value: String(status.rawValue)),
             URLQueryItem(name: "media_type", value: "anime"),
-            URLQueryItem(name: "page", value: String(page)),
-            URLQueryItem(name: "sort_by", value: "bookmark_updated_at"),
-            URLQueryItem(name: "sort_type", value: "desc")
+            URLQueryItem(name: "page", value: String(page))
         ])
         return (data(json) as? [JSON] ?? []).compactMap { b -> (bookmarkId: Int?, title: Title)? in
             guard let media = b.obj("media") ?? (b["model"] as? String == "anime" ? b : nil),

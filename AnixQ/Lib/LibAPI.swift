@@ -243,17 +243,43 @@ enum LibAPI {
             let subs: [LibSubtitle] = p.arr("subtitles").compactMap { s in
                 guard let src = s.str("src") ?? s.str("url"), let url = URL(string: src) else { return nil }
                 return LibSubtitle(url: url, format: s.str("format") ?? url.pathExtension,
-                                   label: s.str("label") ?? s.str("lang") ?? "Субтитры")
+                                   label: s.str("name") ?? s.str("label") ?? "Субтитры")
             }
+            let segments = LibAPI.parseTimecode(p["timecode"])
             if !loggedKeys, (p.str("player") ?? "").lowercased() == "animelib" {
                 loggedKeys = true
-                DebugLog.log("lib: animelib player keys \(p.keys.sorted()) subtitles=\(p.arr("subtitles").first.map { Array($0.keys).sorted() } ?? [])")
+                let tc = (p["timecode"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+                    .flatMap { String(data: $0.prefix(300), encoding: .utf8) } ?? String(describing: p["timecode"] ?? "nil")
+                DebugLog.log("lib: timecode=\(tc) subtitles=\(p.arr("subtitles").count)")
             }
             return LibPlayer(team: team, player: p.str("player") ?? "?", kodikSrc: p.str("src"),
-                             qualities: [], hrefs: hrefs, subtitles: subs)
+                             qualities: [], hrefs: hrefs, subtitles: subs, segments: segments)
         }
         playerCache[episodeId] = (Date(), players)
         return players
+    }
+
+    /// Accepts the shapes seen in the wild: [{type,from,to}], [{name,start,end}], {opening:{from,to}}.
+    static func parseTimecode(_ any: Any?) -> [SkipSegment] {
+        func seconds(_ v: Any?) -> Double? {
+            if let d = v as? Double { return d }
+            if let i = v as? Int { return Double(i) }
+            guard let s = v as? String else { return nil }
+            let parts = s.split(separator: ":").compactMap { Double($0) }
+            return parts.isEmpty ? nil : parts.reduce(0) { $0 * 60 + $1 }
+        }
+        func segment(_ kind: String, _ x: JSON) -> SkipSegment? {
+            guard let from = seconds(x["from"] ?? x["start"] ?? x["begin"]),
+                  let to = seconds(x["to"] ?? x["end"] ?? x["finish"]), to > from else { return nil }
+            return SkipSegment(kind: kind, from: from, to: to)
+        }
+        if let list = any as? [JSON] {
+            return list.compactMap { segment($0.str("type") ?? $0.str("name") ?? $0.str("label") ?? "segment", $0) }
+        }
+        if let dict = any as? JSON {
+            return dict.compactMap { k, v in (v as? JSON).flatMap { segment(k, $0) } }
+        }
+        return []
     }
 
     // MARK: Video mirrors

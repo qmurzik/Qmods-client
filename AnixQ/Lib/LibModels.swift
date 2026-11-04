@@ -173,6 +173,15 @@ struct LibSubtitle: Hashable {
     let label: String
 }
 
+/// Opening / ending segment from AnimeLib's `timecode` (seconds).
+struct SkipSegment: Hashable {
+    let kind: String      // "opening" / "ending" / other label
+    let from: Double
+    let to: Double
+    var isOpening: Bool { kind.lowercased().contains("open") || kind.lowercased().contains("опен") }
+    var isEnding: Bool { kind.lowercased().contains("end") || kind.lowercased().contains("энд") }
+}
+
 struct LibPlayer: Hashable {
     let team: LibTeam
     let player: String               // "Animelib" | "Kodik" | ...
@@ -180,6 +189,7 @@ struct LibPlayer: Hashable {
     let qualities: [StreamQuality]   // relative hrefs as URL paths, resolved against a mirror
     let hrefs: [String: String]      // label -> href
     let subtitles: [LibSubtitle]
+    let segments: [SkipSegment]
 
     var isNative: Bool { player.lowercased() == "animelib" && !hrefs.isEmpty }
     var isKodik: Bool { player.lowercased() == "kodik" && kodikSrc != nil }

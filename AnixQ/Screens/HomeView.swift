@@ -19,12 +19,16 @@ final class HomeModel: ObservableObject {
 
     func load() async {
         error = nil
-        async let o = try? LibAPI.catalog(CatalogQuery(status: .ongoing, sort: .popular), page: 1).items
-        async let u = try? LibAPI.catalog(CatalogQuery(sort: .updated), page: 1).items
-        async let p = try? LibAPI.catalog(CatalogQuery(sort: .popular), page: 1).items
-        async let t = try? LibAPI.catalog(CatalogQuery(sort: .rating), page: 1).items
-        async let n = try? LibAPI.catalog(CatalogQuery(sort: .newest), page: 1).items
-        let (ongoing, updated, popular, top, newest) = await (o, u, p, t, n)
+        func fetch(_ q: CatalogQuery) -> Task<[Title]?, Never> {
+            Task { try? await LibAPI.catalog(q, page: 1).items }
+        }
+        let o = fetch(CatalogQuery(status: .ongoing, sort: .popular))
+        let u = fetch(CatalogQuery(sort: .updated))
+        let p = fetch(CatalogQuery(sort: .popular))
+        let t = fetch(CatalogQuery(sort: .rating))
+        let n = fetch(CatalogQuery(sort: .newest))
+        let ongoing = await o.value, updated = await u.value, popular = await p.value
+        let top = await t.value, newest = await n.value
         self.ongoing = Array((ongoing ?? []).prefix(24))
         self.updated = Array((updated ?? []).prefix(24))
         self.popular = Array((popular ?? []).prefix(24))

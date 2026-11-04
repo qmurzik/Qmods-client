@@ -36,14 +36,15 @@ final class TitleModel: ObservableObject {
     var displayTitle: Title { detail?.title ?? title }
 
     func load(lastTeamId: Int?) async {
+        // Independent tasks instead of `async let` (avoids a Swift runtime task-allocator crash).
         let slug = title.slugURL
-        async let d = try? LibAPI.detail(slug)
-        async let r = LibAPI.related(slug)
-        async let s = LibAPI.similar(slug)
+        let d = Task { try? await LibAPI.detail(slug) }
+        let r = Task { await LibAPI.related(slug) }
+        let s = Task { await LibAPI.similar(slug) }
         await loadEpisodes(lastTeamId: lastTeamId)
-        detail = await d
-        related = await r
-        similar = await s
+        detail = await d.value
+        related = await r.value
+        similar = await s.value
         if let sid = (detail?.title ?? title).shikiId { shiki = try? await ShikiAPI.anime(sid) }
     }
 
@@ -56,9 +57,9 @@ final class TitleModel: ObservableObject {
             // Teams can differ between early and recent episodes, so look at both ends.
             let firstId = first.id
             let lastId: Int? = episodes.count > 1 ? episodes[episodes.count - 1].id : nil
-            async let a = LibAPI.players(episodeId: firstId)
-            async let b = Self.players(lastId)
-            let players = (try await a) + (await b)
+            let lastTask = Task { await Self.players(lastId) }
+            let firstPlayers = try await LibAPI.players(episodeId: firstId)
+            let players = firstPlayers + (await lastTask.value)
             var order: [TeamOption] = []
             for p in players {
                 if let i = order.firstIndex(where: { $0.team.id == p.team.id }) {

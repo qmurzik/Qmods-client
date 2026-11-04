@@ -251,7 +251,7 @@ struct PlayerScreen: View {
     private var bottomBar: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
-                if c.canSkipOpening && c.currentTime < PlayerPrefs.openingLength + 60 {
+                if c.canSkipOpening && (c.opening != nil || c.currentTime < PlayerPrefs.openingLength + 60) {
                     pill("Пропустить опенинг", icon: "forward.fill", prominent: true) { c.skipOpening() }
                 }
                 Spacer()

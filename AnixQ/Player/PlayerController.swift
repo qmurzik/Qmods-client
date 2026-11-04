@@ -28,6 +28,7 @@ final class PlayerController: ObservableObject {
 
     weak var library: LibraryStore?
 
+    @Published private(set) var segments: [SkipSegment] = []
     private var hrefs: [String: String] = [:]
     private var servers: [String] = []
     private var serverIndex = 0
@@ -48,8 +49,20 @@ final class PlayerController: ObservableObject {
     var hasPrevious: Bool { index > 0 }
     var isLoading: Bool { isResolving || (isBuffering && currentTime < 0.5) }
     var openingRange: ClosedRange<Double> { 0...(PlayerPrefs.openingLength + 30) }
-    var canSkipOpening: Bool { isNative && currentTime > 3 && currentTime < 240 && !autoSkipped }
-    var nearEnd: Bool { duration > 0 && duration - currentTime < 100 && hasNext }
+    var opening: SkipSegment? { segments.first { $0.isOpening } }
+    var ending: SkipSegment? { segments.first { $0.isEnding } }
+
+    /// Real opening timing from AnimeLib when available, otherwise "first minutes" heuristic.
+    var canSkipOpening: Bool {
+        guard isNative, !autoSkipped else { return false }
+        if let op = opening { return currentTime >= op.from && currentTime < op.to - 1 }
+        return currentTime > 3 && currentTime < 240
+    }
+    var nearEnd: Bool {
+        guard hasNext, duration > 0 else { return false }
+        if let ed = ending, currentTime >= ed.from { return true }
+        return duration - currentTime < 100
+    }
 
     init(title: Title, episodes: [LibEpisode], teams: [TeamOption], index: Int, team: TeamOption) {
         self.title = title
@@ -89,6 +102,7 @@ final class PlayerController: ObservableObject {
         nextCountdown = nil
         qualities = []
         quality = nil
+        segments = []
         kodikURL = nil
         error = nil
         currentTime = 0
@@ -104,6 +118,10 @@ final class PlayerController: ObservableObject {
             guard token == loadToken else { return }
             if team.native, let p = players.first(where: { $0.team.id == team.id && $0.isNative }) {
                 hrefs = p.hrefs
+                segments = p.segments
+                if !p.segments.isEmpty {
+                    DebugLog.log("player: segments " + p.segments.map { "\($0.kind) \(Int($0.from))-\(Int($0.to))" }.joined(separator: ", "))
+                }
                 let probe = p.hrefs["720p"] ?? p.hrefs.values.first ?? ""
                 servers = await LibAPI.rankServers(await LibAPI.videoServers(), href: probe)
                 guard token == loadToken else { return }
@@ -203,7 +221,7 @@ final class PlayerController: ObservableObject {
 
     func skipOpening() {
         autoSkipped = true
-        seek(by: PlayerPrefs.openingLength)
+        if let op = opening { seek(to: op.to) } else { seek(by: PlayerPrefs.openingLength) }
     }
 
     func select(quality q: StreamQuality) {
@@ -260,8 +278,12 @@ final class PlayerController: ObservableObject {
         guard s.isFinite else { return }
         if !isScrubbing { currentTime = s }
         if duration <= 0, let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
-        if PlayerPrefs.autoSkipOpening, !autoSkipped, isNative, s > 2, s < 15, duration > 300 {
-            skipOpening()
+        if PlayerPrefs.autoSkipOpening, !autoSkipped, isNative {
+            if let op = opening {
+                if s >= op.from, s < op.to - 1 { skipOpening() }
+            } else if s > 2, s < 15, duration > 300 {
+                skipOpening()
+            }
         }
         if duration > 0, s / duration > 0.9, !markedWatched {
             markedWatched = true

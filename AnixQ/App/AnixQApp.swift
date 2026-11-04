@@ -7,6 +7,7 @@ struct AnixQApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        CrashReporter.install()
         URLCache.shared = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 128 * 1024 * 1024)
         Theme.configureAppearance()
     }

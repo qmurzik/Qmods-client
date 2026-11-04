@@ -170,15 +170,19 @@ enum LibAPI {
 
     static func related(_ slug: String) async -> [RelatedTitle] {
         guard let json = try? await request("/anime/\(slug)/relations") else { return [] }
-        return (data(json) as? [JSON] ?? []).compactMap { r in
-            guard let media = r.obj("media"), media.str("model") == "anime", let t = Title(json: media) else { return nil }
+        var seen = Set<Int>()
+        return (data(json) as? [JSON] ?? []).compactMap { r -> RelatedTitle? in
+            guard let media = r.obj("media"), media.str("model") == "anime", let t = Title(json: media),
+                  seen.insert(t.id).inserted else { return nil }
             return RelatedTitle(title: t, relation: r.obj("related_type")?.str("label") ?? "")
         }
     }
 
     static func similar(_ slug: String) async -> [Title] {
         guard let json = try? await request("/anime/\(slug)/similar") else { return [] }
+        var seen = Set<Int>()
         return (data(json) as? [JSON] ?? []).compactMap { $0.obj("media").flatMap(Title.init(json:)) }
+            .filter { seen.insert($0.id).inserted }
     }
 
     @MainActor private static var genreCache: [Genre]?

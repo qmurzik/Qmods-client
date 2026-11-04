@@ -19,8 +19,21 @@ enum DebugLog {
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
+    private static var ring: [String] = []
+    private static let ringLock = NSLock()
+
+    /// Last lines kept in memory (used by the crash reporter).
+    static func recentLines() -> [String] {
+        ringLock.lock(); defer { ringLock.unlock() }
+        return ring
+    }
+
     static func log(_ message: String) {
         let line = String(format: "[%7.2fs] ", Date().timeIntervalSince(start)) + message + "\n"
+        ringLock.lock()
+        ring.append(String(line.dropLast()))
+        if ring.count > 40 { ring.removeFirst(ring.count - 40) }
+        ringLock.unlock()
         #if DEBUG
         print(line, terminator: "")
         #endif

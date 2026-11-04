@@ -112,6 +112,12 @@ jobs:
           shot library -screenshotTab 3
           shot search -screenshotTab 4
           shot title -screenshotSlug 14421--kimetsu-no-yaiba-anime
+          shot title2 -screenshotSlug 21371--sousou-no-frieren-anime
+          # Simulator crash reports, if any.
+          cp ~/Library/Logs/DiagnosticReports/AnixQ* shots/ 2>/dev/null || true
+          DATA=$(xcrun simctl get_app_container "$DEVICE" ru.qmods.anixq data)
+          cp "$DATA/Documents/crash.log" shots/ 2>/dev/null || true
+          cp "$DATA/Documents/debug.log" shots/ 2>/dev/null || true
       - name: Play episodes and rotate
         run: |
           DEVICE=$(xcrun simctl list devices booted | grep -oE "[0-9A-F-]{36}" | head -1)

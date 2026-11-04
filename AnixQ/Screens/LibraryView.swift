@@ -222,9 +222,24 @@ struct SettingsView: View {
 
 struct DiagnosticsView: View {
     @State private var text = ""
+    @State private var crash = CrashReporter.lastReport
 
     var body: some View {
         List {
+            if let crash {
+                Section {
+                    Text(crash)
+                        .font(.system(size: 10, design: .monospaced))
+                        .textSelection(.enabled)
+                    ShareLink(item: crash) { Label("Отправить отчёт о сбое", systemImage: "square.and.arrow.up") }
+                    Button("Удалить отчёт", role: .destructive) {
+                        CrashReporter.clear()
+                        self.crash = nil
+                    }
+                } header: {
+                    Text("Последний сбой")
+                }
+            }
             Section("Журнал этого запуска") {
                 Text(text.isEmpty ? "Пусто — откройте серию и вернитесь сюда." : text)
                     .font(.system(size: 11, design: .monospaced))

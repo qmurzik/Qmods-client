@@ -335,6 +335,8 @@ struct Episode: Decodable, Identifiable, Hashable {
     let url: String
     let isFiller: Bool
     let isWatched: Bool
+    /// `false` means the API expects the client to resolve and play the stream natively.
+    let isIframe: Bool
 
     var id: Int { position }
 
@@ -350,6 +352,13 @@ struct Episode: Decodable, Identifiable, Hashable {
         name = c.string("name") ?? "\(position) серия"
         isFiller = c.value("is_filler") ?? false
         isWatched = c.value("is_watched") ?? false
+        isIframe = c.value("iframe") ?? true
+    }
+
+    /// AniLibria episodes expose plain HLS playlists, so they play in the native AVPlayer.
+    var isLibria: Bool {
+        guard let host = playerURL?.host?.lowercased() else { return false }
+        return host.contains("libria") && url.contains("iframe.php")
     }
 
     var playerURL: URL? {

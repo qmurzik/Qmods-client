@@ -13,6 +13,7 @@ struct PlayerView: View {
     @State private var current: Episode
     @State private var isLoadingPage = true
     @State private var reloadToken = 0
+    @StateObject private var native = NativePlaybackController()
 
     init(release: Release, start: Episode, model: EpisodesModel) {
         self.release = release
@@ -50,6 +51,20 @@ struct PlayerView: View {
             try? AVAudioSession.sharedInstance().setActive(true)
             record(current)
         }
+        .onChange(of: native.finishedCount) { _ in
+            if let next = model.episode(after: current) { play(next) }
+        }
+        .onDisappear { native.stop() }
+        .task(id: current.url) {
+            if current.isLibria {
+                await native.load(current)
+            } else {
+                native.stop()
+                // Safety net: never leave the spinner over a web player that is already usable.
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                if !Task.isCancelled { isLoadingPage = false }
+            }
+        }
     }
 
     // MARK: Pieces
@@ -74,7 +89,7 @@ struct PlayerView: View {
             }
             Spacer()
             Button {
-                reloadToken += 1
+                if current.isLibria { native.reload() } else { reloadToken += 1 }
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 15, weight: .semibold))
@@ -92,20 +107,54 @@ struct PlayerView: View {
     private var videoArea: some View {
         ZStack {
             Color.black
-            if let url = current.playerURL {
+            if current.isLibria {
+                NativeVideoView(player: native.player)
+                if native.isLoading {
+                    loadingOverlay
+                } else if let error = native.error {
+                    VStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(Theme.accent)
+                        Text(error).font(.footnote).multilineTextAlignment(.center).foregroundStyle(Theme.secondaryText)
+                    }
+                    .padding()
+                }
+            } else if let url = current.playerURL {
                 WebPlayer(url: url, isLoading: $isLoadingPage)
                     .id("\(current.url)#\(reloadToken)")
+                if isLoadingPage { loadingOverlay }
             } else {
                 Text("Некорректная ссылка на серию").foregroundStyle(Theme.secondaryText)
             }
-            if isLoadingPage {
-                VStack(spacing: 10) {
-                    ProgressView().tint(.white).scaleEffect(1.3)
-                    Text("Загружаем плеер…").font(.caption).foregroundStyle(Theme.secondaryText)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if current.isLibria && native.inSkipRange {
+                Button {
+                    native.skipOpening()
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Пропустить опенинг")
+                        Image(systemName: "forward.fill")
+                    }
+                    .font(.system(size: 13, weight: .bold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .foregroundStyle(.white)
                 }
-                .allowsHitTesting(false)
+                .padding(.trailing, 14)
+                .padding(.bottom, 52)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: native.inSkipRange)
+    }
+
+    private var loadingOverlay: some View {
+        VStack(spacing: 10) {
+            ProgressView().tint(.white).scaleEffect(1.3)
+            Text("Загружаем видео…").font(.caption).foregroundStyle(Theme.secondaryText)
+        }
+        .allowsHitTesting(false)
     }
 
     private var controls: some View {
@@ -148,6 +197,20 @@ struct PlayerView: View {
                 }
             }
 
+            if current.isLibria && !native.qualities.isEmpty {
+                Menu {
+                    ForEach(native.qualities) { q in
+                        Button {
+                            native.select(q)
+                        } label: {
+                            Label(q.label, systemImage: q == native.selectedQuality ? "checkmark" : "sparkles.tv")
+                        }
+                    }
+                } label: {
+                    selector(icon: "sparkles.tv.fill", title: "Качество", value: native.selectedQuality?.label ?? "—")
+                }
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Серии").font(.headline)
@@ -169,7 +232,9 @@ struct PlayerView: View {
                 }
             }
 
-            Label("Если видео не запускается — нажмите ↻ сверху или выберите другую озвучку/плеер.",
+            Label(current.isLibria
+                  ? "Плеер Libria — нативный: полный экран, PiP и AirPlay в контролах видео. Следующая серия включается автоматически."
+                  : "Если видео не запускается — нажмите ↻ сверху или выберите другой плеер (Libria работает в нативном плеере).",
                   systemImage: "info.circle")
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
@@ -306,7 +371,20 @@ struct WebPlayer: UIViewRepresentable {
         web.navigationDelegate = context.coordinator
         web.uiDelegate = context.coordinator
         web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
-        web.load(URLRequest(url: url))
+        // Kodik refuses to render outside an iframe ("данной страницы не существует"),
+        // so the player is embedded the way it is designed to be used.
+        let src = url.absoluteString.replacingOccurrences(of: "\"", with: "&quot;")
+        let html = """
+        <!doctype html><html><head>
+        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+        <style>html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
+        iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+        </head><body>
+        <iframe src="\(src)" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen
+          webkitallowfullscreen referrerpolicy="origin"></iframe>
+        </body></html>
+        """
+        web.loadHTMLString(html, baseURL: URL(string: "https://anixart.tv/"))
         return web
     }
 
@@ -333,7 +411,7 @@ struct WebPlayer: UIViewRepresentable {
 
         private func isPlayerHost(_ host: String) -> Bool {
             let base = Coordinator.baseDomain(host)
-            return base == allowedBase || host.contains("kodik") || host.contains("aniqit")
+            return base == allowedBase || base == "anixart.tv" || host.contains("kodik") || host.contains("aniqit")
                 || host.contains("sibnet") || host.contains("libria")
         }
 

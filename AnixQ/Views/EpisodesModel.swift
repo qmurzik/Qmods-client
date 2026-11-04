@@ -51,8 +51,9 @@ final class EpisodesModel: ObservableObject {
             let s = try await api.sources(releaseId: releaseId, typeId: type.id)
             guard selectedType?.id == type.id else { return }
             sources = s
-            // Prefer the last used player, then Kodik (best compatibility), then the first one.
+            // Prefer the last used player, then Libria (native AVPlayer), then Kodik, then the first one.
             let preferred = s.first { $0.id == preferredSourceId }
+                ?? s.first { $0.name.localizedCaseInsensitiveContains("libria") }
                 ?? s.first { $0.name.localizedCaseInsensitiveContains("kodik") }
                 ?? s.first
             if let preferred { await loadEpisodes(source: preferred) }

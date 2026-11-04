@@ -81,7 +81,17 @@ struct RootView: View {
     @State private var tab = UserDefaults.standard.integer(forKey: "screenshotTab")
     private let screenshotRelease = UserDefaults.standard.integer(forKey: "screenshotRelease")
 
+    private let autoplayRelease = UserDefaults.standard.integer(forKey: "autoplayRelease")
+
     var body: some View {
+        if autoplayRelease > 0 {
+            DebugAutoplayView(releaseId: autoplayRelease)
+        } else {
+            tabs
+        }
+    }
+
+    private var tabs: some View {
         TabView(selection: $tab) {
             NavigationStack {
                 if screenshotRelease > 0 {
@@ -104,6 +114,49 @@ struct RootView: View {
             NavigationStack { ProfileView() }
                 .tabItem { Label("Профиль", systemImage: "person.fill") }
                 .tag(4)
+        }
+    }
+}
+
+/// CI player test: `-autoplayRelease 2804 -autoplayType 2 -autoplaySource Kodik -autoLandscapeAfter 40`.
+/// Opens the player directly so the simulator run can measure start-up time and check fullscreen.
+struct DebugAutoplayView: View {
+    let releaseId: Int
+    @StateObject private var episodes: EpisodesModel
+    @State private var release: Release?
+    @State private var ready = false
+
+    init(releaseId: Int) {
+        self.releaseId = releaseId
+        _episodes = StateObject(wrappedValue: EpisodesModel(releaseId: releaseId))
+    }
+
+    var body: some View {
+        Group {
+            if ready, let release, let first = episodes.episodes.first {
+                PlayerView(release: release, start: first, model: episodes)
+            } else {
+                ProgressView()
+            }
+        }
+        .task {
+            let defaults = UserDefaults.standard
+            DebugLog.log("autoplay: start release \(releaseId)")
+            release = try? await AnixartAPI.shared.release(releaseId)
+            let typeId = defaults.integer(forKey: "autoplayType")
+            await episodes.load(preferredTypeId: typeId > 0 ? typeId : nil, preferredSourceId: nil)
+            if let name = defaults.string(forKey: "autoplaySource"),
+               let source = episodes.sources.first(where: { $0.name.localizedCaseInsensitiveContains(name) }) {
+                await episodes.select(source: source)
+            }
+            DebugLog.log("autoplay: type=\(episodes.selectedType?.name ?? "-") source=\(episodes.selectedSource?.name ?? "-") episodes=\(episodes.episodes.count)")
+            ready = true
+            let after = defaults.integer(forKey: "autoLandscapeAfter")
+            if after > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(after) * 1_000_000_000)
+                DebugLog.log("autoplay: rotate to landscape")
+                OrientationController.set(.landscape)
+            }
         }
     }
 }

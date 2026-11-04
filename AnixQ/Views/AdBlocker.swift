@@ -7,6 +7,11 @@ import WebKit
 final class AdBlocker {
     static let shared = AdBlocker()
 
+    /// On by default; the CI test can turn it off with `-adblock NO`.
+    nonisolated static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: "adblock") == nil ? true : UserDefaults.standard.bool(forKey: "adblock")
+    }
+
     private var compiled: WKContentRuleList?
     private var compileTask: Task<WKContentRuleList?, Never>?
 

@@ -29,11 +29,11 @@ struct PlayerView: View {
             let landscape = geo.size.width > geo.size.height
             VStack(spacing: 0) {
                 if !landscape { topBar }
-                videoArea
+                videoArea(landscape: landscape)
                     .frame(width: geo.size.width,
                            height: landscape ? geo.size.height : geo.size.width * 9 / 16)
                     .overlay(alignment: .top) {
-                        if landscape { landscapeBar }
+                        if landscape && !current.isLibria { landscapeBar }
                     }
                 if !landscape {
                     ScrollView { controls.padding() }
@@ -141,14 +141,16 @@ struct PlayerView: View {
 
     // MARK: Video
 
-    private var videoArea: some View {
+    private func videoArea(landscape: Bool) -> some View {
         ZStack {
             Color.black
             // Both players stay in the hierarchy; only the active one is visible. This keeps
             // their identity stable across rotations and episode switches.
-            NativeVideoView(player: native.player)
-                .opacity(current.isLibria ? 1 : 0)
-                .allowsHitTesting(current.isLibria)
+            NativePlayerView(controller: native, isFullscreen: landscape) {
+                OrientationController.set(landscape ? .portrait : .landscape)
+            }
+            .opacity(current.isLibria ? 1 : 0)
+            .allowsHitTesting(current.isLibria)
 
             if !current.isLibria, let url = current.playerURL {
                 WebPlayer(url: url, isLoading: $isLoadingPage)
@@ -156,9 +158,7 @@ struct PlayerView: View {
             }
 
             if current.isLibria {
-                if native.isLoading {
-                    loadingOverlay
-                } else if let error = native.error {
+                if let error = native.error {
                     errorOverlay(error)
                 }
             } else if isLoadingPage {
@@ -181,7 +181,7 @@ struct PlayerView: View {
                     .foregroundStyle(.white)
                 }
                 .padding(.trailing, 14)
-                .padding(.bottom, 56)
+                .padding(.bottom, 64)
                 .transition(.opacity)
             }
         }
@@ -437,6 +437,30 @@ struct WebPlayer: UIViewRepresentable {
             config.preferences.isElementFullscreenEnabled = false
         }
 
+        // Media events from every frame (the video lives in Kodik's cross-origin iframe) are
+        // reported back for the debug log: this is how the CI test sees whether video starts.
+        var probe = """
+        (function(){
+          function post(m){ try{ window.webkit.messageHandlers.dbg.postMessage(m); }catch(e){} }
+          ['playing','waiting','error','loadedmetadata','stalled'].forEach(function(ev){
+            document.addEventListener(ev, function(e){
+              var t=e.target; post(ev+' '+location.host+' '+((t&&t.currentSrc)||'').slice(0,80));
+            }, true);
+          });
+        })();
+        """
+        if UserDefaults.standard.bool(forKey: "debugAutoClick") {
+            probe += """
+            setTimeout(function(){
+              var b=document.querySelector('.play_button, .play_background, .fp-ui, video');
+              if(b){ b.click(); window.webkit.messageHandlers.dbg.postMessage('autoclick '+location.host+' '+b.className); }
+            }, 5000);
+            """
+        }
+        config.userContentController.addUserScript(
+            WKUserScript(source: probe, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        config.userContentController.add(context.coordinator, name: "dbg")
+
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
         web.backgroundColor = .black
@@ -462,8 +486,9 @@ struct WebPlayer: UIViewRepresentable {
           referrerpolicy="origin"></iframe>
         </body></html>
         """
+        DebugLog.log("web: load \(url.absoluteString)")
         Task { @MainActor in
-            if let rules = await AdBlocker.shared.rules() {
+            if AdBlocker.isEnabled, let rules = await AdBlocker.shared.rules() {
                 web.configuration.userContentController.add(rules)
             }
             web.loadHTMLString(html, baseURL: URL(string: "https://anixart.tv/"))
@@ -474,11 +499,17 @@ struct WebPlayer: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "dbg")
         uiView.stopLoading()
         uiView.loadHTMLString("", baseURL: nil)
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+        func userContentController(_ userContentController: WKUserContentController,
+                                   didReceive message: WKScriptMessage) {
+            DebugLog.log("web: \(message.body)")
+        }
+
         private let allowedBase: String?
         private var isLoading: Binding<Bool>
 
@@ -507,6 +538,7 @@ struct WebPlayer: UIViewRepresentable {
             if let url = navigationAction.request.url, let scheme = url.scheme,
                scheme == "http" || scheme == "https" {
                 if let host = url.host, !isPlayerHost(host) {
+                    DebugLog.log("web: blocked main-frame redirect to \(host)")
                     decisionHandler(.cancel)
                     return
                 }
@@ -517,6 +549,7 @@ struct WebPlayer: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            DebugLog.log("web: didFinish")
             DispatchQueue.main.async { self.isLoading.wrappedValue = false }
         }
 

@@ -4,8 +4,10 @@ import UserNotifications
 
 // MARK: - Session
 
-/// Shikimori only issues tokens to registered OAuth applications, so the user registers their
-/// own (free, one minute) and pastes its id/secret once.
+/// Two ways in:
+/// - **site session** (default): the user signs in on shikimori.io in a web view and the app reuses
+///   that session (cookies + CSRF token), exactly like the site's own frontend calls the API;
+/// - **OAuth app**: the user's own registered application (client id/secret), kept as a fallback.
 enum ShikiSession {
     static let redirectURI = "urn:ietf:wg:oauth:2.0:oob"
     private static let d = UserDefaults.standard
@@ -38,13 +40,24 @@ enum ShikiSession {
         get { d.string(forKey: "shiki.nickname") }
         set { d.set(newValue, forKey: "shiki.nickname") }
     }
-    static var isLoggedIn: Bool { token != nil && userId != nil }
+    /// "name=value; name2=value2" for the site session.
+    static var cookieHeader: String? {
+        get { d.string(forKey: "shiki.cookies") }
+        set { d.set(newValue, forKey: "shiki.cookies") }
+    }
+    static var csrf: String? {
+        get { d.string(forKey: "shiki.csrf") }
+        set { d.set(newValue, forKey: "shiki.csrf") }
+    }
+    static var isLoggedIn: Bool { (token != nil || cookieHeader != nil) && userId != nil }
 
     static func clear() {
         token = nil
         refreshToken = nil
         userId = nil
         nickname = nil
+        cookieHeader = nil
+        csrf = nil
     }
 }
 
@@ -106,10 +119,23 @@ enum ShikiAPI {
         }
         if auth, let token = ShikiSession.token {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else if auth, let cookies = ShikiSession.cookieHeader {
+            req.httpShouldHandleCookies = false
+            req.setValue(cookies, forHTTPHeaderField: "Cookie")
+            if let csrf = ShikiSession.csrf { req.setValue(csrf, forHTTPHeaderField: "X-CSRF-Token") }
+            req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+            req.setValue(host + "/", forHTTPHeaderField: "Referer")
         }
         let (data, response) = try await URLSession.shared.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if status == 401, auth, await refresh() {
+        if status == 401, auth, ShikiSession.token != nil, await refresh() {
+            return try await request(path, method: method, json: json, form: form, auth: auth)
+        }
+        // Site session: an expired CSRF token gives 422/401 — fetch a fresh one once and retry.
+        if (status == 422 || status == 401), auth, ShikiSession.token == nil, ShikiSession.cookieHeader != nil,
+           method != "GET", !retriedCSRF, await refreshCSRF() {
+            retriedCSRF = true
+            defer { retriedCSRF = false }
             return try await request(path, method: method, json: json, form: form, auth: auth)
         }
         guard (200..<300).contains(status) else {
@@ -118,6 +144,28 @@ enum ShikiAPI {
         }
         if data.isEmpty { return JSON() }
         return try JSONSerialization.jsonObject(with: data)
+    }
+
+    private static var retriedCSRF = false
+
+    /// Reads a fresh CSRF token from the site using the stored session cookies.
+    private static func refreshCSRF() async -> Bool {
+        guard let cookies = ShikiSession.cookieHeader else { return false }
+        var req = URLRequest(url: URL(string: host + "/")!)
+        req.httpShouldHandleCookies = false
+        req.setValue(cookies, forHTTPHeaderField: "Cookie")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+                     forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let html = String(data: data, encoding: .utf8),
+              let range = html.range(of: #"name="csrf-token" content="([^"]+)""#, options: .regularExpression) else {
+            return false
+        }
+        let match = String(html[range])
+        guard let token = match.split(separator: "\"").dropFirst(3).first else { return false }
+        ShikiSession.csrf = String(token)
+        DebugLog.log("shiki: csrf refreshed")
+        return true
     }
 
     // MARK: Public data
@@ -168,6 +216,8 @@ enum ShikiAPI {
         guard let access = json.str("access_token") else { throw LibError.server("Shikimori не выдал токен") }
         ShikiSession.token = access
         ShikiSession.refreshToken = json.str("refresh_token")
+        ShikiSession.cookieHeader = nil
+        ShikiSession.csrf = nil
         let me = try await request("/api/users/whoami") as? JSON ?? [:]
         ShikiSession.userId = me.int("id")
         ShikiSession.nickname = me.str("nickname")

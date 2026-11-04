@@ -6,7 +6,7 @@
   "sourceLinkTitle": "GitHub",
   "sourceLinkUrl": "https://github.com/qmurzik/Qmods-client",
   "sourceImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-  "sourceUpdateTime": "2026-11-04T17:46:26+0000",
+  "sourceUpdateTime": "2026-11-04T18:31:53+0000",
   "sourceDescription": "AnixQ — аниме с AnimeLib: каталог, плеер без рекламы, синхронизация с Shikimori.",
   "appCategories": [
     "Приложения"
@@ -15,13 +15,13 @@
     {
       "appType": "SELF_SIGN",
       "appCateIndex": 0,
-      "appUpdateTime": "2026-11-04T17:46:26+0000",
+      "appUpdateTime": "2026-11-04T18:31:53+0000",
       "appName": "AnixQ",
-      "appVersion": "1.0.26",
+      "appVersion": "1.0.27",
       "appImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.26/AnixQ.ipa",
-      "appSize": 1544316,
-      "appDescription": "Widgets, For You, characters, icons and accent, iPad layout\n\n- WidgetKit extension: Continue Watching (small/medium) and Airing Today\n  (medium/large); app shares data through the App Group container and\n  deep links via anixq://title/<slug> and anixq://schedule\n- 'Для вас' shelf from titles similar to what the user watches\n- Characters and key staff from Shikimori on the title page\n- Alternate app icons and accent colour picker in Settings\n- Option to show subtitles for dubs when available\n- Larger hero/header and readable text width on iPad"
+      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.27/AnixQ.ipa",
+      "appSize": 1790691,
+      "appDescription": "New episodes, auto-download, franchise order, videos, trace.moe, random pick, Spotlight, stats, Siri, Live Activity, gestures\n\n- Widgets: 'Скоро выходит' shows the next 36 hours (Shikimori keeps only the\n  next episode per show), network error state, heartbeat + App Group status\n  in Diagnostics; deployment target iOS 16.1\n- 'Новая серия' badges and home shelf from AnimeLib episode counts for\n  titles being watched; optional Wi-Fi auto-download of next episodes\n- Title page: franchise watch order, trailers and OP/ED from Shikimori\n- Search by screenshot via trace.moe (matched to AnimeLib by AniList id),\n  'Что посмотреть?' random picker with filters, Spotlight indexing\n- Statistics with yearly summary; Siri/Shortcuts intents; downloads Live\n  Activity; gesture, double-tap step and speed memory settings"
     }
   ]
 }

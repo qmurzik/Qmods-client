@@ -114,7 +114,7 @@ struct TitleDetail {
         guard let t = Title(json: x) else { return nil }
         title = t
         summary = TitleDetail.flatten(x["summary"]).trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        background = x.obj("background")?.str("url")
+        background = LibAPI.realImage(x.obj("background")?.str("url"))
         genres = x.arr("genres").compactMap { g in
             guard let id = g.int("id"), let n = g.str("name") else { return nil }
             return Genre(id: id, name: n)

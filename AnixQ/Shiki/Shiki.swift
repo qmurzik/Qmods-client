@@ -127,8 +127,9 @@ enum ShikiAPI {
         return (json as? [JSON] ?? []).compactMap { x -> ShikiCalendarItem? in
             guard let a = x.obj("anime"), let id = a.int("id"),
                   let at = parseDate(x.str("next_episode_at")) else { return nil }
+            // The API hides posters behind "missing" placeholders; the direct path still works.
             let img = a.obj("image")?.str("original").flatMap { path -> URL? in
-                path.contains("missing") ? nil : URL(string: host + path)
+                path.contains("missing") ? URL(string: "\(host)/system/animes/preview/\(id).jpg") : URL(string: host + path)
             }
             return ShikiCalendarItem(shikiId: id, name: a.str("name") ?? "", russian: a.str("russian"), image: img,
                                      kind: a.str("kind"), score: a.double("score"),

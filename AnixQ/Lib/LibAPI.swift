@@ -165,7 +165,13 @@ enum LibAPI {
     static func background(_ slug: String) async -> URL? {
         guard let json = try? await request("/anime/\(slug)", query: [URLQueryItem(name: "fields[]", value: "background")]),
               let d = data(json) as? JSON else { return nil }
-        return d.obj("background")?.str("url").flatMap(URL.init(string:))
+        return realImage(d.obj("background")?.str("url")).flatMap(URL.init(string:))
+    }
+
+    /// AnimeLib returns `/static/images/placeholders/…` (no host) when a title has no art.
+    static func realImage(_ s: String?) -> String? {
+        guard let s, s.hasPrefix("http"), !s.contains("/placeholders/") else { return nil }
+        return s
     }
 
     static func related(_ slug: String) async -> [RelatedTitle] {
@@ -200,11 +206,30 @@ enum LibAPI {
         return list
     }
 
-    /// Finds the AnimeLib title for a Shikimori id (used by the schedule).
+    /// Finds the AnimeLib title for a Shikimori id (used by the schedule). Results are cached
+    /// on disk, so each calendar entry is searched only once.
+    @MainActor private static var shikiMap: [Int: Title] = {
+        guard let data = UserDefaults.standard.data(forKey: "shikiMap"),
+              let map = try? JSONDecoder().decode([Int: Title].self, from: data) else { return [:] }
+        return map
+    }()
+    @MainActor private static var shikiMisses: Set<Int> = []
+
+    @MainActor
+    static func cachedTitle(shikiId: Int) -> Title? { shikiMap[shikiId] }
+
+    @MainActor
     static func title(shikiId: Int, names: [String]) async -> Title? {
+        if let hit = shikiMap[shikiId] { return hit }
+        if shikiMisses.contains(shikiId) { return nil }
         for n in names where !n.isEmpty {
-            if let hit = try? await search(n).first(where: { $0.shikiId == shikiId }) { return hit }
+            if let hit = try? await search(n).first(where: { $0.shikiId == shikiId }) {
+                shikiMap[shikiId] = hit
+                if let data = try? JSONEncoder().encode(shikiMap) { UserDefaults.standard.set(data, forKey: "shikiMap") }
+                return hit
+            }
         }
+        shikiMisses.insert(shikiId)
         return nil
     }
 

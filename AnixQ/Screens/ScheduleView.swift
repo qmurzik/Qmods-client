@@ -42,7 +42,7 @@ struct ScheduleView: View {
                     }
                     ForEach(items) { item in
                         NavigationLink(value: ShikiRoute(shikiId: item.shikiId, names: [item.name, item.russian ?? ""])) {
-                            row(item)
+                            ScheduleRow(item: item, time: timeFormatter.string(from: item.nextEpisodeAt))
                         }
                     }
                 } header: {
@@ -101,24 +101,6 @@ struct ScheduleView: View {
         }
     }
 
-    private func row(_ item: ShikiCalendarItem) -> some View {
-        HStack(spacing: 12) {
-            Theme.card
-                .frame(width: 52, height: 74)
-                .overlay { RemoteImage(url: item.image) }
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title).font(.subheadline.weight(.semibold)).lineLimit(2)
-                Text("Серия \(item.nextEpisode)" + (item.episodes.map { $0 > 0 ? " из \($0)" : "" } ?? ""))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(timeFormatter.string(from: item.nextEpisodeAt))
-                .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(item.nextEpisodeAt < Date() ? Color.secondary : Theme.accent)
-        }
-    }
-
     private func header(_ d: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ru_RU")
@@ -133,11 +115,45 @@ struct ScheduleView: View {
         do {
             let items = try await ShikiAPI.calendar()
             let cal = Calendar.current
+            // Shikimori keeps a few stale entries from past days; show today onwards only.
+            let today = cal.startOfDay(for: Date())
             let grouped = Dictionary(grouping: items) { cal.startOfDay(for: $0.nextEpisodeAt) }
-            days = grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.nextEpisodeAt < $1.nextEpisodeAt }) }
-            selected = days.firstIndex { cal.isDateInToday($0.date) } ?? 0
+            days = grouped.keys.filter { $0 >= today }.sorted().map { day in
+                (day, (grouped[day] ?? []).sorted { $0.nextEpisodeAt < $1.nextEpisodeAt })
+            }
+            selected = 0
         } catch {
             self.error = "Не удалось загрузить расписание Shikimori"
+        }
+    }
+}
+
+struct ScheduleRow: View {
+    let item: ShikiCalendarItem
+    let time: String
+    @State private var title: Title?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Theme.card
+                .frame(width: 52, height: 74)
+                .overlay { RemoteImage(url: title?.thumbURL ?? item.image) }
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title?.title ?? item.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text("Серия \(item.nextEpisode)" + (item.episodes.map { $0 > 0 ? " из \($0)" : "" } ?? ""))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(time)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .foregroundStyle(item.nextEpisodeAt < Date() ? Color.secondary : Theme.accent)
+        }
+        .task {
+            title = LibAPI.cachedTitle(shikiId: item.shikiId)
+            if title == nil {
+                title = await LibAPI.title(shikiId: item.shikiId, names: [item.name, item.russian ?? ""])
+            }
         }
     }
 }

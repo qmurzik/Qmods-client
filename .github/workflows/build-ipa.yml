@@ -11,14 +11,19 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    # macOS arm64 hosted runners are often out of capacity; try several images in parallel.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, macos-14]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          X=$(ls -d /Applications/Xcode_1[6-9]*.app 2>/dev/null | sort -V | tail -1); [ -n "$X" ] && sudo xcode-select -s "$X"
           xcodebuild -version
 
       - name: Install XcodeGen
@@ -52,7 +57,7 @@ jobs:
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AnixQ-ipa
+          name: AnixQ-ipa-${{ matrix.os }}
           path: AnixQ.ipa
 
       - name: Upload build log
@@ -70,19 +75,20 @@ jobs:
 
   simulator:
     needs: build
-    runs-on: macos-15
+    if: ${{ !cancelled() }}
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+        run: X=$(ls -d /Applications/Xcode_1[6-9]*.app 2>/dev/null | sort -V | tail -1); [ -n "$X" ] && sudo xcode-select -s "$X"
       - name: Generate project
         run: brew install xcodegen && xcodegen generate
       - name: Build for simulator
         run: |
           set -o pipefail
           xcodebuild -project AnixQ.xcodeproj -target AnixQ -configuration Debug \
-            -sdk iphonesimulator -arch arm64 SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO build \
+            -sdk iphonesimulator SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO build \
             | tee sim.log | grep -E "error:|BUILD" || true
           grep -q "BUILD SUCCEEDED" sim.log
       - name: Run and capture screenshots

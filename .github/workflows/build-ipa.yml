@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -67,8 +68,10 @@ jobs:
         with:
           files: AnixQ.ipa
 
-  screenshots:
+  simulator:
+    needs: build
     runs-on: macos-15
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
@@ -103,32 +106,9 @@ jobs:
           shot library -screenshotTab 3
           shot search -screenshotTab 4
           shot title -screenshotSlug 14421--kimetsu-no-yaiba-anime
-      - uses: actions/upload-artifact@v4
-        with:
-          name: screenshots
-          path: shots
-
-  player-test:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
-      - name: Generate project
-        run: brew install xcodegen && xcodegen generate
-      - name: Build for simulator
-        run: |
-          set -o pipefail
-          xcodebuild -project AnixQ.xcodeproj -target AnixQ -configuration Debug \
-            -sdk iphonesimulator -arch arm64 SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO build \
-            | tee sim.log | grep -E "error:|BUILD" || true
-          grep -q "BUILD SUCCEEDED" sim.log
       - name: Play episodes and rotate
         run: |
-          DEVICE=$(xcrun simctl list devices available | grep -E "iPhone 1[5-6] Pro \(" | head -1 | grep -oE "[0-9A-F-]{36}")
-          xcrun simctl boot "$DEVICE"
-          xcrun simctl bootstatus "$DEVICE" -b
-          xcrun simctl install "$DEVICE" build/Debug-iphonesimulator/AnixQ.app
+          DEVICE=$(xcrun simctl list devices booted | grep -oE "[0-9A-F-]{36}" | head -1)
           mkdir -p player
           run() { # name, args...
             name=$1; shift
@@ -148,6 +128,11 @@ jobs:
             echo "===== $name"; cat "player/${name}.log" || true
           }
           run kodik_guest -autoplayTeam AniLibria
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: shots
       - uses: actions/upload-artifact@v4
         if: always()
         with:

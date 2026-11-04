@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibraryView: View {
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var downloads: DownloadManager
     @State private var showSettings = false
     @State private var showLibLogin = false
 
@@ -36,6 +37,19 @@ struct LibraryView: View {
 
             if let e = library.lastSyncError {
                 Section { Label(e, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange) }
+            }
+
+            Section {
+                NavigationLink {
+                    DownloadsView()
+                } label: {
+                    HStack {
+                        Label("Загрузки", systemImage: "arrow.down.circle")
+                        Spacer()
+                        let count = downloads.items.values.filter { $0.state == .done }.count
+                        if count > 0 { Text("\(count)").foregroundStyle(.secondary) }
+                    }
+                }
             }
 
             Section("Закладки") {
@@ -132,6 +146,10 @@ struct PlayerPrefs {
         get { UserDefaults.standard.object(forKey: "player.opLength") as? Double ?? 85 }
         set { UserDefaults.standard.set(newValue, forKey: "player.opLength") }
     }
+    static var downloadHeight: Int {
+        get { UserDefaults.standard.object(forKey: "download.quality") as? Int ?? 720 }
+        set { UserDefaults.standard.set(newValue, forKey: "download.quality") }
+    }
     static var preferredHeight: Int {
         get { UserDefaults.standard.object(forKey: "player.quality") as? Int ?? 720 }
         set { UserDefaults.standard.set(newValue, forKey: "player.quality") }
@@ -150,6 +168,7 @@ struct SettingsView: View {
     @State private var autoNext = PlayerPrefs.autoNext
     @State private var opLength = PlayerPrefs.openingLength
     @State private var quality = PlayerPrefs.preferredHeight
+    @State private var downloadQuality = PlayerPrefs.downloadHeight
     @AppStorage("adblock") private var adblock = true
     @State private var confirmClear = false
 
@@ -206,6 +225,13 @@ struct SettingsView: View {
                         .onChange(of: autoSkip) { PlayerPrefs.autoSkipOpening = $0 }
                     Stepper("Длина опенинга: \(Int(opLength)) с", value: $opLength, in: 30...150, step: 5)
                         .onChange(of: opLength) { PlayerPrefs.openingLength = $0 }
+                    Picker("Качество загрузок", selection: $downloadQuality) {
+                        Text("1080p").tag(1080)
+                        Text("720p").tag(720)
+                        Text("480p").tag(480)
+                        Text("360p").tag(360)
+                    }
+                    .onChange(of: downloadQuality) { PlayerPrefs.downloadHeight = $0 }
                     Picker("Качество по умолчанию", selection: $quality) {
                         Text("1080p").tag(1080)
                         Text("720p").tag(720)

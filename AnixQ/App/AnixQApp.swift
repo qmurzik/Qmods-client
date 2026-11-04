@@ -3,7 +3,9 @@ import UserNotifications
 
 @main
 struct AnixQApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var library = LibraryStore()
+    @StateObject private var downloads = DownloadManager.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -16,6 +18,7 @@ struct AnixQApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(library)
+                .environmentObject(downloads)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
                 .task { AdBlocker.shared.warmUp() }

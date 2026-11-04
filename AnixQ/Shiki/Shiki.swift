@@ -273,14 +273,16 @@ enum ShikiAPI {
         return (json as? [JSON])?.first
     }
 
-    static func upsertRate(animeId: Int, status: String?, episodes: Int?, score: Int? = nil) async throws {
+    static func upsertRate(animeId: Int, status: String?, episodes: Int?, score: Int? = nil,
+                           force: Bool = false) async throws {
         guard let uid = ShikiSession.userId else { return }
         var fields: JSON = [:]
         if let status { fields["status"] = status }
         if let episodes { fields["episodes"] = episodes }
         if let score { fields["score"] = score }
         if let existing = try await userRate(animeId: animeId), let rid = existing.int("id") {
-            if let e = episodes, let have = existing.int("episodes"), have >= e, status == nil || status == existing.str("status") {
+            if !force, let e = episodes, let have = existing.int("episodes"), have >= e,
+               status == nil || status == existing.str("status") {
                 return
             }
             _ = try await request("/api/v2/user_rates/\(rid)", method: "PATCH", json: ["user_rate": fields])

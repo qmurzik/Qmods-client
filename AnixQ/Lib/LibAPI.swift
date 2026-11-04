@@ -277,8 +277,13 @@ enum LibAPI {
                     .flatMap { String(data: $0.prefix(300), encoding: .utf8) } ?? String(describing: p["timecode"] ?? "nil")
                 DebugLog.log("lib: timecode=\(tc) subtitles=\(p.arr("subtitles").count)")
             }
-            return LibPlayer(team: team, player: p.str("player") ?? "?", kodikSrc: p.str("src"),
-                             qualities: [], hrefs: hrefs, subtitles: subs, segments: segments)
+            var player = LibPlayer(team: team, player: p.str("player") ?? "?", kodikSrc: p.str("src"),
+                                   qualities: [], hrefs: hrefs, subtitles: subs, segments: segments)
+            player.playerId = p.int("id")
+            player.isViewed = p["is_viewed"] as? Bool ?? false
+            if let n = p.double("timecode") { player.serverTimecode = n }
+            else if let o = p.obj("timecode") { player.serverTimecode = o.double("timecode") ?? o.double("time") ?? o.double("value") }
+            return player
         }
         playerCache[episodeId] = (Date(), players)
         return players
@@ -377,6 +382,38 @@ enum LibAPI {
 
     static func kodikURL(_ src: String) -> URL? {
         URL(string: src.hasPrefix("//") ? "https:" + src : src)
+    }
+
+    // MARK: Viewing progress (account)
+
+    @MainActor private static var progressDisabled = false
+
+    /// Saves the playback position on the AnimeLib account (`PUT /episodes/timecodes`).
+    @MainActor
+    static func saveTimecode(episodeId: Int, playerId: Int?, seconds: Double) async {
+        guard LibSession.isLoggedIn, !progressDisabled else { return }
+        var item: JSON = ["episode_id": episodeId, "timecode": Int(seconds)]
+        if let playerId { item["player_id"] = playerId }
+        do {
+            try await request("/episodes/timecodes", method: "PUT", body: item)
+        } catch LibError.badStatus(let code) where code == 422 || code == 404 || code == 405 {
+            // Field names differ from our guess: the response is in the log; stop retrying this run.
+            progressDisabled = true
+        } catch {}
+    }
+
+    /// Marks an episode as viewed on the AnimeLib account (`PUT /episodes/views`).
+    @MainActor
+    static func markViewed(episodeId: Int, playerId: Int?) async {
+        guard LibSession.isLoggedIn else { return }
+        var item: JSON = ["episode_id": episodeId]
+        if let playerId { item["player_id"] = playerId }
+        do {
+            try await request("/episodes/views", method: "PUT", body: item)
+            DebugLog.log("lib: episode \(episodeId) marked viewed")
+        } catch {
+            DebugLog.log("lib: mark viewed failed \(error)")
+        }
     }
 
     // MARK: Bookmarks

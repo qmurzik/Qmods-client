@@ -183,6 +183,10 @@ struct SkipSegment: Hashable {
 }
 
 struct LibPlayer: Hashable {
+    var playerId: Int? = nil
+    /// Position saved on the account (seconds) and whether AnimeLib marks the episode as viewed.
+    var serverTimecode: Double? = nil
+    var isViewed = false
     let team: LibTeam
     let player: String               // "Animelib" | "Kodik" | ...
     let kodikSrc: String?

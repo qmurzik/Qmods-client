@@ -96,6 +96,7 @@ final class TitleModel: ObservableObject {
 struct TitleView: View {
     @StateObject private var model: TitleModel
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var downloads: DownloadManager
     @ObservedObject private var shikiSync = ShikiSync.shared
     @State private var play: PlayRequest?
     @State private var expanded = false
@@ -259,8 +260,23 @@ struct TitleView: View {
     private var episodesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "Серии") {
-                if model.episodes.count > 6 {
-                    Button("Все \(model.episodes.count)") { showAllEpisodes = true }.font(.subheadline)
+                HStack(spacing: 14) {
+                    if let team = model.selectedTeam, team.native, !model.episodes.isEmpty {
+                        Menu {
+                            Button {
+                                model.episodes.forEach { downloads.download(title: t, episode: $0, team: team.team) }
+                            } label: { Label("Скачать все серии", systemImage: "arrow.down.circle") }
+                            Button {
+                                model.episodes.filter { !library.isWatched(titleId: t.id, number: $0.number) }
+                                    .forEach { downloads.download(title: t, episode: $0, team: team.team) }
+                            } label: { Label("Скачать непросмотренные", systemImage: "arrow.down.to.line") }
+                        } label: {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                    }
+                    if model.episodes.count > 6 {
+                        Button("Все \(model.episodes.count)") { showAllEpisodes = true }.font(.subheadline)
+                    }
                 }
             }
             if !model.teams.isEmpty { teamPicker.padding(.horizontal) }
@@ -283,7 +299,22 @@ struct TitleView: View {
                                 }
                                 .buttonStyle(PressableStyle())
                                 .id(i)
-                                .contextMenu { watchedToggle(ep) }
+                                .overlay(alignment: .topLeading) {
+                                    if downloads.localFile(episodeId: ep.id, teamId: model.selectedTeam?.id) != nil {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                            .symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, Theme.accent)
+                                            .padding(6)
+                                    }
+                                }
+                                .contextMenu {
+                                    watchedToggle(ep)
+                                    if let team = model.selectedTeam, team.native {
+                                        Button {
+                                            downloads.download(title: t, episode: ep, team: team.team)
+                                        } label: { Label("Скачать", systemImage: "arrow.down.circle") }
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal)
@@ -355,6 +386,7 @@ struct TitleView: View {
                             if library.isWatched(titleId: t.id, number: ep.number) {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.secondary)
                             }
+                            DownloadButton(title: t, episode: ep, team: model.selectedTeam)
                         }
                     }
                     .swipeActions { watchedToggle(ep).tint(.gray) }
@@ -388,16 +420,10 @@ struct TitleView: View {
             .cardStyle()
             .padding(.horizontal)
 
-            if ShikiSession.isLoggedIn, t.shikiId != nil {
-                Menu {
-                    ForEach((1...10).reversed(), id: \.self) { n in
-                        Button("\(n)") { Task { await shikiSync.rate(title: t, score: n) } }
-                    }
-                } label: {
-                    Label("Оценить на Shikimori", systemImage: "star.leadinghalf.filled")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .padding(.horizontal)
+            if shikiSync.isLoggedIn, let sid = t.shikiId {
+                ShikiRateCard(shikiId: sid, totalEpisodes: model.shiki?.episodes ?? model.episodes.count)
+                    .id(sid)
+                    .padding(.horizontal)
             }
         }
     }

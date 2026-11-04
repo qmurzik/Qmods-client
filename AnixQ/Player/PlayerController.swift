@@ -29,6 +29,15 @@ final class PlayerController: ObservableObject {
     weak var library: LibraryStore?
 
     @Published private(set) var segments: [SkipSegment] = []
+    /// Sleep timer: pause at a time, or when the current episode ends.
+    @Published var sleepAt: Date?
+    @Published var sleepAfterEpisode = false
+    @Published private(set) var subtitleTracks: [LibSubtitle] = []
+    @Published private(set) var subtitle: LibSubtitle?
+    @Published private(set) var subtitleText: String?
+    private var cues: [SubtitleCue] = []
+    private var playerId: Int?
+    private var lastServerSave = Date.distantPast
     private var hrefs: [String: String] = [:]
     private var servers: [String] = []
     private var serverIndex = 0
@@ -103,6 +112,10 @@ final class PlayerController: ObservableObject {
         qualities = []
         quality = nil
         segments = []
+        subtitleTracks = []
+        subtitle = nil
+        subtitleText = nil
+        cues = []
         kodikURL = nil
         error = nil
         currentTime = 0
@@ -113,12 +126,28 @@ final class PlayerController: ObservableObject {
         startedAt = Date()
         let ep = episode
         DebugLog.log("player: load ep \(ep.number) team \(team.team.name) native=\(team.native)")
+        // Downloaded episode: play the file, no network needed.
+        if let file = DownloadManager.shared.localFile(episodeId: ep.id, teamId: team.id)
+            ?? (team.native ? nil : DownloadManager.shared.localFile(episodeId: ep.id, teamId: nil)) {
+            hrefs = [:]
+            servers = []
+            let q = StreamQuality(label: "Скачано", url: file)
+            qualities = [q]
+            play(q, at: library?.resumePosition(episodeId: ep.id))
+            isResolving = false
+            DebugLog.log("player: playing downloaded file")
+            updateNowPlaying()
+            Task { await loadSubtitlesIfAny(episodeId: ep.id) }
+            return
+        }
         do {
             let players = try await LibAPI.players(episodeId: ep.id)
             guard token == loadToken else { return }
             if team.native, let p = players.first(where: { $0.team.id == team.id && $0.isNative }) {
                 hrefs = p.hrefs
+                playerId = p.playerId
                 segments = p.segments
+                setSubtitleTracks(p.subtitles)
                 if !p.segments.isEmpty {
                     DebugLog.log("player: segments " + p.segments.map { "\($0.kind) \(Int($0.from))-\(Int($0.to))" }.joined(separator: ", "))
                 }
@@ -128,7 +157,10 @@ final class PlayerController: ObservableObject {
                 serverIndex = 0
                 rebuildQualities()
                 let preferred = qualities.first { $0.height <= PlayerPrefs.preferredHeight } ?? qualities.last
-                if let preferred { play(preferred, at: library?.resumePosition(episodeId: ep.id)) }
+                // Local position first, then the one saved on the AnimeLib account.
+                var resume = library?.resumePosition(episodeId: ep.id)
+                if resume == nil, let server = p.serverTimecode, server > 15 { resume = server }
+                if let preferred { play(preferred, at: resume) }
                 DebugLog.log(String(format: "player: resolved in %.2fs", Date().timeIntervalSince(startedAt)))
                 if hasNext { LibAPI.warmUp(episodeId: episodes[index + 1].id, teamId: team.id) }
             } else if let p = players.first(where: { $0.team.id == team.id && $0.isKodik }),
@@ -197,6 +229,41 @@ final class PlayerController: ObservableObject {
             }
             error = e ?? "Не удалось воспроизвести видео"
         default: break
+        }
+    }
+
+    // MARK: Subtitles
+
+    private func setSubtitleTracks(_ tracks: [LibSubtitle]) {
+        subtitleTracks = tracks
+        guard !tracks.isEmpty else { return }
+        DebugLog.log("player: subtitles " + tracks.map { "\($0.label) [\($0.format)]" }.joined(separator: ", "))
+        // Subtitle teams: show their subtitles by default; dubs: only if the user turned them on.
+        if team.team.isSubtitles || UserDefaults.standard.bool(forKey: "subs.alwaysOn") {
+            select(subtitle: tracks[0])
+        }
+    }
+
+    func loadSubtitlesIfAny(episodeId: Int) async {
+        guard let players = try? await LibAPI.players(episodeId: episodeId),
+              let p = players.first(where: { $0.team.id == team.id }) else { return }
+        setSubtitleTracks(p.subtitles)
+    }
+
+    func select(subtitle s: LibSubtitle?) {
+        subtitle = s
+        cues = []
+        subtitleText = nil
+        guard let s else { return }
+        Task {
+            do {
+                let parsed = try await SubtitleParser.load(s)
+                guard subtitle == s else { return }
+                cues = parsed
+                DebugLog.log("player: \(parsed.count) subtitle cues from \(s.label)")
+            } catch {
+                DebugLog.log("player: subtitles failed \(error)")
+            }
         }
     }
 
@@ -277,6 +344,15 @@ final class PlayerController: ObservableObject {
     private func tick(_ s: Double) {
         guard s.isFinite else { return }
         if !isScrubbing { currentTime = s }
+        if let at = sleepAt, Date() >= at {
+            sleepAt = nil
+            player.pause()
+            DebugLog.log("player: sleep timer paused playback")
+        }
+        if !cues.isEmpty {
+            let text = SubtitleParser.cue(at: s, in: cues)
+            if text != subtitleText { subtitleText = text }
+        }
         if duration <= 0, let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
         if PlayerPrefs.autoSkipOpening, !autoSkipped, isNative {
             if let op = opening {
@@ -288,6 +364,8 @@ final class PlayerController: ObservableObject {
         if duration > 0, s / duration > 0.9, !markedWatched {
             markedWatched = true
             library?.markWatched(title: title, episode: episode, totalEpisodes: episodes.count)
+            let (eid, pid) = (episode.id, playerId)
+            Task { await LibAPI.markViewed(episodeId: eid, playerId: pid) }
         }
         saveProgress(force: false)
     }
@@ -297,6 +375,10 @@ final class PlayerController: ObservableObject {
         if !markedWatched {
             markedWatched = true
             library?.markWatched(title: title, episode: episode, totalEpisodes: episodes.count)
+        }
+        if sleepAfterEpisode {
+            sleepAfterEpisode = false
+            return
         }
         guard hasNext, PlayerPrefs.autoNext else { return }
         countdownTask?.cancel()
@@ -316,6 +398,11 @@ final class PlayerController: ObservableObject {
         guard force || Date().timeIntervalSince(lastSaved) > 5 else { return }
         lastSaved = Date()
         library.updateProgress(title: title, episode: episode, team: team.team, position: currentTime, duration: duration)
+        if isNative, force || Date().timeIntervalSince(lastServerSave) > 30 {
+            lastServerSave = Date()
+            let (eid, pid, pos) = (episode.id, playerId, currentTime)
+            Task { await LibAPI.saveTimecode(episodeId: eid, playerId: pid, seconds: pos) }
+        }
     }
 
     // MARK: Lock screen / Control Center

@@ -4,7 +4,7 @@ import MediaPlayer
 import WebKit
 
 enum PlayerPanel: String, Identifiable {
-    case episodes, teams, speed, quality
+    case episodes, teams, speed, quality, subtitles, sleep
     var id: String { rawValue }
 }
 
@@ -29,6 +29,8 @@ struct PlayerScreen: View {
     @State private var scrubValue: Double = 0
     @State private var webLoading = true
     @State private var webReload = 0
+    @AppStorage("subs.size") private var subtitleSize: Double = 20
+    @AppStorage("subs.background") private var subtitleBackground = true
 
     enum DragMode { case brightness, volume, seek }
 
@@ -95,6 +97,24 @@ struct PlayerScreen: View {
                         .font(.footnote).foregroundStyle(.white.opacity(0.7))
                 }
                 .allowsHitTesting(false)
+            }
+            if let text = c.subtitleText {
+                VStack {
+                    Spacer()
+                    Text(text)
+                        .font(.system(size: subtitleSize, weight: .semibold))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .shadow(color: .black, radius: 2)
+                        .shadow(color: .black, radius: 4)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(subtitleBackground ? 0.45 : 0), in: RoundedRectangle(cornerRadius: 6))
+                        .padding(.horizontal, 40)
+                        .padding(.bottom, showControls ? 110 : 28)
+                }
+                .allowsHitTesting(false)
+                .animation(.easeInOut(duration: 0.2), value: showControls)
             }
             if let e = c.error {
                 VStack(spacing: 12) {
@@ -240,6 +260,9 @@ struct PlayerScreen: View {
             if let pip, AVPictureInPictureController.isPictureInPictureSupported() {
                 iconButton("pip.enter", size: 17) { pip.startPictureInPicture() }
             }
+            iconButton(c.sleepAt != nil || c.sleepAfterEpisode ? "moon.zzz.fill" : "moon.zzz", size: 17) {
+                panel = .sleep
+            }
             iconButton("lock.open", size: 17) {
                 locked = true
                 showControls = true
@@ -281,6 +304,9 @@ struct PlayerScreen: View {
                 pill(c.team.team.name, icon: "waveform") { panel = .teams }
                 pill(c.rate == 1 ? "1×" : String(format: "%g×", c.rate), icon: "gauge.with.dots.needle.50percent") { panel = .speed }
                 if c.qualities.count > 1 { pill(c.quality?.label ?? "Авто", icon: "sparkles.tv") { panel = .quality } }
+                if !c.subtitleTracks.isEmpty {
+                    pill(c.subtitle == nil ? "Субтитры выкл" : "Субтитры", icon: "captions.bubble") { panel = .subtitles }
+                }
             }
         }
     }
@@ -446,6 +472,8 @@ struct PlayerScreen: View {
         case .teams: return "Озвучка"
         case .speed: return "Скорость"
         case .quality: return "Качество"
+        case .subtitles: return "Субтитры"
+        case .sleep: return "Таймер сна"
         }
     }
 
@@ -493,6 +521,32 @@ struct PlayerScreen: View {
                     Spacer()
                 }
             }
+        case .subtitles:
+            panelRow(selected: c.subtitle == nil) {
+                c.select(subtitle: nil)
+                panel = nil
+            } content: {
+                Text("Выключены")
+                Spacer()
+            }
+            ForEach(c.subtitleTracks, id: \.url) { sub in
+                panelRow(selected: c.subtitle == sub) {
+                    c.select(subtitle: sub)
+                    panel = nil
+                } content: {
+                    Text(sub.label).lineLimit(1)
+                    Spacer()
+                    Text(sub.format.uppercased()).font(.caption2).foregroundStyle(.white.opacity(0.5))
+                }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Размер: \(Int(subtitleSize))").font(.caption).foregroundStyle(.white.opacity(0.7))
+                Slider(value: $subtitleSize, in: 14...34, step: 1).tint(.white)
+                Toggle("Подложка", isOn: $subtitleBackground).font(.subheadline)
+            }
+            .padding()
+        case .sleep:
+            sleepPanel
         case .quality:
             ForEach(c.qualities) { q in
                 panelRow(selected: q == c.quality) {
@@ -503,6 +557,40 @@ struct PlayerScreen: View {
                     Spacer()
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var sleepPanel: some View {
+        panelRow(selected: c.sleepAt == nil && !c.sleepAfterEpisode) {
+            c.sleepAt = nil
+            c.sleepAfterEpisode = false
+            panel = nil
+        } content: {
+            Text("Выключен")
+            Spacer()
+        }
+        panelRow(selected: c.sleepAfterEpisode) {
+            c.sleepAt = nil
+            c.sleepAfterEpisode = true
+            panel = nil
+        } content: {
+            Text("После этой серии")
+            Spacer()
+        }
+        ForEach([15, 30, 45, 60, 90], id: \.self) { m in
+            panelRow(selected: false) {
+                c.sleepAfterEpisode = false
+                c.sleepAt = Date().addingTimeInterval(Double(m) * 60)
+                panel = nil
+            } content: {
+                Text("Через \(m) мин")
+                Spacer()
+            }
+        }
+        if let at = c.sleepAt {
+            Text("Пауза в \(at.formatted(date: .omitted, time: .shortened))")
+                .font(.caption).foregroundStyle(.white.opacity(0.6)).padding()
         }
     }
 

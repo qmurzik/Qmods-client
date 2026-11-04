@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "sourceName": "AnixQ",
+  "sourceAuthor": "qmurzik",
+  "sourceExportEnable": true,
+  "sourceLinkTitle": "GitHub",
+  "sourceLinkUrl": "https://github.com/qmurzik/Qmods-client",
+  "sourceImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
+  "sourceUpdateTime": "2026-11-04T17:46:26+0000",
+  "sourceDescription": "AnixQ — аниме с AnimeLib: каталог, плеер без рекламы, синхронизация с Shikimori.",
+  "appCategories": [
+    "Приложения"
+  ],
+  "appRepositories": [
+    {
+      "appType": "SELF_SIGN",
+      "appCateIndex": 0,
+      "appUpdateTime": "2026-11-04T17:46:26+0000",
+      "appName": "AnixQ",
+      "appVersion": "1.0.26",
+      "appImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
+      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.26/AnixQ.ipa",
+      "appSize": 1544316,
+      "appDescription": "Widgets, For You, characters, icons and accent, iPad layout\n\n- WidgetKit extension: Continue Watching (small/medium) and Airing Today\n  (medium/large); app shares data through the App Group container and\n  deep links via anixq://title/<slug> and anixq://schedule\n- 'Для вас' shelf from titles similar to what the user watches\n- Characters and key staff from Shikimori on the title page\n- Alternate app icons and accent colour picker in Settings\n- Option to show subtitles for dubs when available\n- Larger hero/header and readable text width on iPad"
+    }
+  ]
+}

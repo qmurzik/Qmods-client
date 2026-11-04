@@ -133,8 +133,8 @@ struct TitleDetail {
         if let s = node as? String { return s }
         guard let n = node as? JSON else { return "" }
         if let text = n["text"] as? String { return text }
-        let children = (n["content"] as? [Any] ?? []).map(flatten)
-        let joined = children.joined()
+        let children: [String] = (n["content"] as? [Any] ?? []).map { TitleDetail.flatten($0) }
+        let joined = children.joined(separator: "")
         return (n["type"] as? String) == "paragraph" ? joined + "\n\n" : joined
     }
 }

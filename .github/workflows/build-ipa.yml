@@ -38,8 +38,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build | tee build.log | grep -E "error:|warning: .*deprecated|BUILD" || true
-          test -d build/Release-iphoneos/AnixQ.app
+            build | tee build.log | grep -E "error:|BUILD" || true
+          grep -q "BUILD SUCCEEDED" build.log
 
       - name: Package IPA
         run: |
@@ -80,8 +80,8 @@ jobs:
           set -o pipefail
           xcodebuild -project AnixQ.xcodeproj -target AnixQ -configuration Debug \
             -sdk iphonesimulator -arch arm64 SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO build \
-            | grep -E "error:|BUILD" || true
-          test -d build/Debug-iphonesimulator/AnixQ.app
+            | tee sim.log | grep -E "error:|BUILD" || true
+          grep -q "BUILD SUCCEEDED" sim.log
       - name: Run and capture screenshots
         run: |
           DEVICE=$(xcrun simctl list devices available | grep -E "iPhone 1[5-6] Pro \(" | head -1 | grep -oE "[0-9A-F-]{36}")
@@ -121,8 +121,8 @@ jobs:
           set -o pipefail
           xcodebuild -project AnixQ.xcodeproj -target AnixQ -configuration Debug \
             -sdk iphonesimulator -arch arm64 SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO build \
-            | grep -E "error:|BUILD" || true
-          test -d build/Debug-iphonesimulator/AnixQ.app
+            | tee sim.log | grep -E "error:|BUILD" || true
+          grep -q "BUILD SUCCEEDED" sim.log
       - name: Play episodes and rotate
         run: |
           DEVICE=$(xcrun simctl list devices available | grep -E "iPhone 1[5-6] Pro \(" | head -1 | grep -oE "[0-9A-F-]{36}")

@@ -23,6 +23,7 @@ final class NativePlaybackController: ObservableObject {
 
     init() {
         player.allowsExternalPlayback = true
+        player.automaticallyWaitsToMinimizeStalling = true
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
                                                       queue: .main) { [weak self] time in
             let seconds = time.seconds
@@ -31,7 +32,7 @@ final class NativePlaybackController: ObservableObject {
     }
 
     private static var preferredHeight: Int {
-        get { UserDefaults.standard.object(forKey: "player.quality") as? Int ?? 1080 }
+        get { UserDefaults.standard.object(forKey: "player.quality") as? Int ?? 720 }
         set { UserDefaults.standard.set(newValue, forKey: "player.quality") }
     }
 
@@ -88,7 +89,8 @@ final class NativePlaybackController: ObservableObject {
     private func play(_ quality: StreamQuality, at time: CMTime?) {
         selectedQuality = quality
         let item = AVPlayerItem(url: quality.url)
-        item.preferredForwardBufferDuration = 20
+        // 0 = let AVPlayer start as soon as it can instead of pre-buffering a fixed window.
+        item.preferredForwardBufferDuration = 0
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime,
                                                              object: item, queue: .main) { [weak self] _ in

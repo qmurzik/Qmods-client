@@ -18,6 +18,7 @@ struct AnixQApp: App {
                 .environmentObject(history)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
+                .task { AdBlocker.shared.warmUp() }
         }
     }
 }

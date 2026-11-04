@@ -2,18 +2,21 @@ import SwiftUI
 import WebKit
 import AVFoundation
 
-/// Episodes are served by embeddable web players (mostly Kodik), so the video itself is rendered
-/// by a WKWebView. Everything around it — episode switching, dubs, history, layout — is native.
+/// Player screen.
+///
+/// The video view keeps the same identity in portrait and landscape: only the chrome around it
+/// is added or removed. Re-creating it on rotation is what broke fullscreen before (AVKit's
+/// fullscreen controller and the web player were destroyed mid-playback).
 struct PlayerView: View {
     let release: Release
     @ObservedObject var model: EpisodesModel
 
     @EnvironmentObject private var history: HistoryStore
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var native = NativePlaybackController()
     @State private var current: Episode
     @State private var isLoadingPage = true
     @State private var reloadToken = 0
-    @StateObject private var native = NativePlaybackController()
 
     init(release: Release, start: Episode, model: EpisodesModel) {
         self.release = release
@@ -24,55 +27,57 @@ struct PlayerView: View {
     var body: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
-            ZStack {
-                Color.black.ignoresSafeArea()
-                if landscape {
-                    videoArea
-                        .ignoresSafeArea()
-                        .overlay(alignment: .topLeading) {
-                            closeButton.padding(.leading, 8).padding(.top, 8).opacity(0.75)
-                        }
-                } else {
-                    VStack(spacing: 0) {
-                        topBar
-                        videoArea
-                            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                        ScrollView {
-                            controls.padding()
-                        }
+            VStack(spacing: 0) {
+                if !landscape { topBar }
+                videoArea
+                    .frame(width: geo.size.width,
+                           height: landscape ? geo.size.height : geo.size.width * 9 / 16)
+                    .overlay(alignment: .top) {
+                        if landscape { landscapeBar }
                     }
+                if !landscape {
+                    ScrollView { controls.padding() }
                 }
             }
         }
+        .background(Color.black.ignoresSafeArea())
         .statusBarHidden()
+        .persistentSystemOverlays(.hidden)
         .preferredColorScheme(.dark)
         .onAppear {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
             try? AVAudioSession.sharedInstance().setActive(true)
+            AdBlocker.shared.warmUp()
             record(current)
+        }
+        .onDisappear {
+            native.stop()
+            OrientationController.set(.portrait)
         }
         .onChange(of: native.finishedCount) { _ in
             if let next = model.episode(after: current) { play(next) }
         }
-        .onDisappear { native.stop() }
         .task(id: current.url) {
             if current.isLibria {
                 await native.load(current)
+                if let next = model.episode(after: current), let url = next.playerURL {
+                    LibriaResolver.prefetch(url)
+                }
             } else {
                 native.stop()
                 // Safety net: never leave the spinner over a web player that is already usable.
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
                 if !Task.isCancelled { isLoadingPage = false }
             }
         }
     }
 
-    // MARK: Pieces
+    // MARK: Chrome
 
-    private var closeButton: some View {
-        Button { dismiss() } label: {
-            Image(systemName: "chevron.down")
-                .font(.system(size: 16, weight: .bold))
+    private func roundButton(_ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .bold))
                 .frame(width: 38, height: 38)
                 .background(.ultraThinMaterial, in: Circle())
                 .foregroundStyle(.white)
@@ -80,50 +85,84 @@ struct PlayerView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 12) {
-            closeButton
+        HStack(spacing: 10) {
+            roundButton("chevron.down") { dismiss() }
             VStack(alignment: .leading, spacing: 1) {
                 Text(release.title).font(.system(size: 15, weight: .bold)).lineLimit(1)
                 Text("\(current.name) · \(model.selectedType?.name ?? "")")
                     .font(.caption).foregroundStyle(Theme.secondaryText).lineLimit(1)
             }
             Spacer()
-            Button {
-                if current.isLibria { native.reload() } else { reloadToken += 1 }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 38, height: 38)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-            .accessibilityLabel("Перезагрузить плеер")
+            roundButton("arrow.clockwise") { reload() }
+                .accessibilityLabel("Перезагрузить")
+            roundButton("arrow.up.left.and.arrow.down.right") { OrientationController.set(.landscape) }
+                .accessibilityLabel("Во весь экран")
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    @ViewBuilder
+    /// Small bar in landscape: leaves the player's own controls untouched.
+    private var landscapeBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                OrientationController.set(.portrait)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    Text("Свернуть")
+                }
+                .font(.system(size: 12, weight: .bold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.ultraThinMaterial, in: Capsule())
+                .foregroundStyle(.white)
+            }
+            if let next = model.episode(after: current) {
+                Button {
+                    play(next)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Серия \(next.position)")
+                        Image(systemName: "forward.end.fill")
+                    }
+                    .font(.system(size: 12, weight: .bold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .foregroundStyle(.white)
+                }
+            }
+        }
+        .padding(.top, 6)
+        .opacity(0.85)
+    }
+
+    // MARK: Video
+
     private var videoArea: some View {
         ZStack {
             Color.black
+            // Both players stay in the hierarchy; only the active one is visible. This keeps
+            // their identity stable across rotations and episode switches.
+            NativeVideoView(player: native.player)
+                .opacity(current.isLibria ? 1 : 0)
+                .allowsHitTesting(current.isLibria)
+
+            if !current.isLibria, let url = current.playerURL {
+                WebPlayer(url: url, isLoading: $isLoadingPage)
+                    .id("\(current.url)#\(reloadToken)")
+            }
+
             if current.isLibria {
-                NativeVideoView(player: native.player)
                 if native.isLoading {
                     loadingOverlay
                 } else if let error = native.error {
-                    VStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(Theme.accent)
-                        Text(error).font(.footnote).multilineTextAlignment(.center).foregroundStyle(Theme.secondaryText)
-                    }
-                    .padding()
+                    errorOverlay(error)
                 }
-            } else if let url = current.playerURL {
-                WebPlayer(url: url, isLoading: $isLoadingPage)
-                    .id("\(current.url)#\(reloadToken)")
-                if isLoadingPage { loadingOverlay }
-            } else {
-                Text("Некорректная ссылка на серию").foregroundStyle(Theme.secondaryText)
+            } else if isLoadingPage {
+                loadingOverlay
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -142,8 +181,8 @@ struct PlayerView: View {
                     .foregroundStyle(.white)
                 }
                 .padding(.trailing, 14)
-                .padding(.bottom, 52)
-                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                .padding(.bottom, 56)
+                .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: native.inSkipRange)
@@ -156,6 +195,17 @@ struct PlayerView: View {
         }
         .allowsHitTesting(false)
     }
+
+    private func errorOverlay(_ error: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(Theme.accent)
+            Text(error).font(.footnote).multilineTextAlignment(.center).foregroundStyle(Theme.secondaryText)
+            Button("Повторить") { reload() }.buttonStyle(.bordered)
+        }
+        .padding()
+    }
+
+    // MARK: Controls (portrait)
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -233,8 +283,8 @@ struct PlayerView: View {
             }
 
             Label(current.isLibria
-                  ? "Плеер Libria — нативный: полный экран, PiP и AirPlay в контролах видео. Следующая серия включается автоматически."
-                  : "Если видео не запускается — нажмите ↻ сверху или выберите другой плеер (Libria работает в нативном плеере).",
+                  ? "Libria играет во встроенном плеере iOS. Во весь экран — кнопка ⤢ сверху или просто поверните телефон."
+                  : "Во весь экран — кнопка ⤢ сверху или поверните телефон. Если видео не стартует — ↻ или другой плеер.",
                   systemImage: "info.circle")
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
@@ -300,6 +350,15 @@ struct PlayerView: View {
 
     // MARK: Actions
 
+    private func reload() {
+        if current.isLibria {
+            native.reload()
+        } else {
+            isLoadingPage = true
+            reloadToken += 1
+        }
+    }
+
     private func play(_ ep: Episode) {
         guard ep != current else { return }
         isLoadingPage = true
@@ -336,6 +395,26 @@ struct PlayerView: View {
     }
 }
 
+// MARK: - Orientation
+
+enum OrientationController {
+    enum Target { case portrait, landscape }
+
+    static func set(_ target: Target) {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first
+        else { return }
+        let mask: UIInterfaceOrientationMask = target == .landscape ? .landscapeRight : .portrait
+        for window in scene.windows {
+            window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            window.rootViewController?.presentedViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+    }
+}
+
 // MARK: - Web player
 
 struct WebPlayer: UIViewRepresentable {
@@ -351,14 +430,12 @@ struct WebPlayer: UIViewRepresentable {
         config.allowsPictureInPictureMediaPlayback = true
         config.allowsAirPlayForMediaPlayback = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // Element fullscreen inside an embedded WKWebView ignores rotation (the "vertical
+        // fullscreen" bug). With it off, the player falls back to the native iOS video
+        // fullscreen, and the app's own fullscreen button rotates the whole screen.
         if #available(iOS 15.4, *) {
-            config.preferences.isElementFullscreenEnabled = true
+            config.preferences.isElementFullscreenEnabled = false
         }
-        // Black page background and no page margins so the player blends with the screen.
-        let css = "html,body{background:#000!important;margin:0!important;padding:0!important;overflow:hidden!important}"
-        let js = "var s=document.createElement('style');s.innerHTML='\(css)';(document.head||document.documentElement).appendChild(s);"
-        config.userContentController.addUserScript(
-            WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
 
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
@@ -371,6 +448,7 @@ struct WebPlayer: UIViewRepresentable {
         web.navigationDelegate = context.coordinator
         web.uiDelegate = context.coordinator
         web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+
         // Kodik refuses to render outside an iframe ("данной страницы не существует"),
         // so the player is embedded the way it is designed to be used.
         let src = url.absoluteString.replacingOccurrences(of: "\"", with: "&quot;")
@@ -381,10 +459,15 @@ struct WebPlayer: UIViewRepresentable {
         iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
         </head><body>
         <iframe src="\(src)" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen
-          webkitallowfullscreen referrerpolicy="origin"></iframe>
+          referrerpolicy="origin"></iframe>
         </body></html>
         """
-        web.loadHTMLString(html, baseURL: URL(string: "https://anixart.tv/"))
+        Task { @MainActor in
+            if let rules = await AdBlocker.shared.rules() {
+                web.configuration.userContentController.add(rules)
+            }
+            web.loadHTMLString(html, baseURL: URL(string: "https://anixart.tv/"))
+        }
         return web
     }
 
@@ -398,7 +481,6 @@ struct WebPlayer: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private let allowedBase: String?
         private var isLoading: Binding<Bool>
-        private var didFinishFirstLoad = false
 
         init(initial: URL, isLoading: Binding<Bool>) {
             self.allowedBase = initial.host.map(Coordinator.baseDomain)
@@ -431,12 +513,10 @@ struct WebPlayer: UIViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
-            // about:blank etc. are fine; custom schemes (app-store links, intents) are not.
             decisionHandler(navigationAction.request.url?.scheme == "about" ? .allow : .cancel)
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            didFinishFirstLoad = true
             DispatchQueue.main.async { self.isLoading.wrappedValue = false }
         }
 
@@ -447,12 +527,6 @@ struct WebPlayer: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                      withError error: Error) {
             DispatchQueue.main.async { self.isLoading.wrappedValue = false }
-        }
-
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            if !didFinishFirstLoad {
-                DispatchQueue.main.async { self.isLoading.wrappedValue = true }
-            }
         }
 
         /// Pop-ups (ads) are never opened.

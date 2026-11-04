@@ -76,6 +76,10 @@ final class EpisodesModel: ObservableObject {
             let e = try await api.episodes(releaseId: releaseId, typeId: type.id, sourceId: source.id)
             guard selectedSource?.id == source.id, selectedType?.id == type.id else { return }
             episodes = e
+            // Resolve AniLibria streams in the background so the player starts immediately.
+            if let first = e.first, first.isLibria, let url = first.playerURL {
+                LibriaResolver.prefetch(url)
+            }
         } catch {
             self.error = error.localizedDescription
         }

@@ -2,7 +2,7 @@ name: AnixQ
 options:
   bundleIdPrefix: ru.qmods
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.1"
   createIntermediateGroups: true
 settings:
   base:
@@ -36,7 +36,7 @@ targets:
   AnixQWidget:
     type: app-extension
     platform: iOS
-    deploymentTarget: "16.0"
+    deploymentTarget: "16.1"
     sources:
       - path: AnixQWidget
       - path: Shared

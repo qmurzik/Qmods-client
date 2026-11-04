@@ -37,12 +37,24 @@ struct PosterImage: View {
 struct PosterCard: View {
     let title: Title
     var showMeta = true
+    @ObservedObject private var updater = WatchingUpdater.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             PosterImage(url: title.coverURL)
                 .overlay(alignment: .topTrailing) {
                     if let s = title.score { ScoreBadge(score: s).padding(6) }
+                }
+                .overlay(alignment: .bottomLeading) {
+                    let n = updater.newCount(title.id)
+                    if n > 0 {
+                        Text(n == 1 ? "Новая серия" : "+\(n) серий")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 7).padding(.vertical, 4)
+                            .background(Theme.accent, in: Capsule())
+                            .foregroundStyle(.white)
+                            .padding(6)
+                    }
                 }
             Text(title.title)
                 .font(.footnote.weight(.semibold))

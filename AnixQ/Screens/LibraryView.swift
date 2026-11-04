@@ -41,6 +41,11 @@ struct LibraryView: View {
 
             Section {
                 NavigationLink {
+                    StatsView()
+                } label: {
+                    Label("Статистика", systemImage: "chart.bar.xaxis")
+                }
+                NavigationLink {
                     DownloadsView()
                 } label: {
                     HStack {
@@ -146,6 +151,31 @@ struct PlayerPrefs {
         get { UserDefaults.standard.object(forKey: "player.opLength") as? Double ?? 85 }
         set { UserDefaults.standard.set(newValue, forKey: "player.opLength") }
     }
+    private static let d = UserDefaults.standard
+    static var doubleTapStep: Int {
+        get { d.object(forKey: "player.tapStep") as? Int ?? 10 }
+        set { d.set(newValue, forKey: "player.tapStep") }
+    }
+    static var gestureBrightness: Bool {
+        get { d.object(forKey: "gesture.brightness") as? Bool ?? true }
+        set { d.set(newValue, forKey: "gesture.brightness") }
+    }
+    static var gestureVolume: Bool {
+        get { d.object(forKey: "gesture.volume") as? Bool ?? true }
+        set { d.set(newValue, forKey: "gesture.volume") }
+    }
+    static var gestureSeek: Bool {
+        get { d.object(forKey: "gesture.seek") as? Bool ?? true }
+        set { d.set(newValue, forKey: "gesture.seek") }
+    }
+    static var rememberSpeed: Bool {
+        get { d.object(forKey: "player.rememberSpeed") as? Bool ?? false }
+        set { d.set(newValue, forKey: "player.rememberSpeed") }
+    }
+    static var savedRate: Float {
+        get { d.object(forKey: "player.rate") as? Float ?? 1 }
+        set { d.set(newValue, forKey: "player.rate") }
+    }
     static var downloadHeight: Int {
         get { UserDefaults.standard.object(forKey: "download.quality") as? Int ?? 720 }
         set { UserDefaults.standard.set(newValue, forKey: "download.quality") }
@@ -169,6 +199,13 @@ struct SettingsView: View {
     @State private var opLength = PlayerPrefs.openingLength
     @State private var quality = PlayerPrefs.preferredHeight
     @State private var downloadQuality = PlayerPrefs.downloadHeight
+    @State private var autoDL = WatchingUpdater.autoDownload
+    @State private var tapStep = PlayerPrefs.doubleTapStep
+    @State private var gBright = PlayerPrefs.gestureBrightness
+    @State private var gVolume = PlayerPrefs.gestureVolume
+    @State private var gSeek = PlayerPrefs.gestureSeek
+    @State private var rememberSpeed = PlayerPrefs.rememberSpeed
+    @State private var autoDLCount = WatchingUpdater.autoDownloadCount
     @AppStorage("adblock") private var adblock = true
     @AppStorage("accent") private var accentRaw = AccentChoice.rose.rawValue
     @AppStorage("appIcon") private var appIcon = AppIconChoice.standard.rawValue
@@ -219,6 +256,36 @@ struct SettingsView: View {
                         }
                 } footer: {
                     Text("Для тайтлов из «Смотрю» — по расписанию Shikimori, с запасом 2 часа на озвучку.")
+                }
+
+                Section {
+                    Toggle("Скачивать новые серии по Wi-Fi", isOn: $autoDL)
+                        .onChange(of: autoDL) { WatchingUpdater.autoDownload = $0 }
+                    if autoDL {
+                        Stepper("Серий наперёд: \(autoDLCount)", value: $autoDLCount, in: 1...5)
+                            .onChange(of: autoDLCount) { WatchingUpdater.autoDownloadCount = $0 }
+                    }
+                } header: {
+                    Text("Автозагрузка")
+                } footer: {
+                    Text("Для тайтлов из «Смотрю»: следующие непросмотренные серии с той же озвучкой (плеер AnimeLib).")
+                }
+
+                Section {
+                    Picker("Двойной тап", selection: $tapStep) {
+                        ForEach([5, 10, 15, 30], id: \.self) { Text("±\($0) с").tag($0) }
+                    }
+                    .onChange(of: tapStep) { PlayerPrefs.doubleTapStep = $0 }
+                    Toggle("Яркость — свайп слева", isOn: $gBright)
+                        .onChange(of: gBright) { PlayerPrefs.gestureBrightness = $0 }
+                    Toggle("Громкость — свайп справа", isOn: $gVolume)
+                        .onChange(of: gVolume) { PlayerPrefs.gestureVolume = $0 }
+                    Toggle("Перемотка — горизонтальный свайп", isOn: $gSeek)
+                        .onChange(of: gSeek) { PlayerPrefs.gestureSeek = $0 }
+                    Toggle("Запоминать скорость", isOn: $rememberSpeed)
+                        .onChange(of: rememberSpeed) { PlayerPrefs.rememberSpeed = $0 }
+                } header: {
+                    Text("Жесты плеера")
                 }
 
                 Section("Плеер") {
@@ -324,6 +391,24 @@ struct DiagnosticsView: View {
                     }
                 } header: {
                     Text("Последний сбой")
+                }
+            }
+            Section("Виджеты") {
+                LabeledContent("Общая группа приложений",
+                               value: WidgetShared.fileURL == nil ? "недоступна (подпись без App Group)" : "доступна")
+                let statuses = WidgetShared.readStatuses()
+                if statuses.isEmpty {
+                    Text(WidgetShared.fileURL == nil
+                         ? "Без общей группы виджет «Продолжить» не получает данные. В GBox включите App Group / «сохранять entitlements» при подписи."
+                         : "Виджеты ещё не запускались")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(statuses, id: \.kind) { st in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(st.kind == "continue" ? "Продолжить просмотр" : "Скоро выходит").font(.subheadline)
+                        Text("\(st.date.formatted(date: .abbreviated, time: .shortened)) — \(st.note)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Section("Журнал этого запуска") {

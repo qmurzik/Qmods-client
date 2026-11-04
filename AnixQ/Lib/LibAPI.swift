@@ -184,6 +184,34 @@ enum LibAPI {
         }
     }
 
+    /// Whole franchise (anime only) in release order: walks relations a few levels deep.
+    static func franchise(_ root: Title) async -> [(title: Title, date: String)] {
+        var queue: [Title] = [root]
+        var seen: Set<Int> = [root.id]
+        var nodes: [Title] = []
+        var depth = 0
+        while !queue.isEmpty, depth < 3, nodes.count < 25 {
+            var next: [Title] = []
+            for t in queue {
+                nodes.append(t)
+                for r in await related(t.slugURL) where seen.insert(r.title.id).inserted {
+                    next.append(r.title)
+                }
+            }
+            queue = next
+            depth += 1
+        }
+        nodes.append(contentsOf: queue.prefix(max(0, 25 - nodes.count)))
+        guard nodes.count > 1 else { return [] }
+        var dated: [(Title, String)] = []
+        for t in nodes {
+            let d = (try? await request("/anime/\(t.slugURL)", query: [URLQueryItem(name: "fields[]", value: "releaseDate")]))
+                .flatMap { ($0 as? JSON)?.obj("data")?.str("releaseDate") }
+            dated.append((t, d ?? t.year.map { "\($0)-12-31" } ?? "9999"))
+        }
+        return dated.sorted { $0.1 < $1.1 }.map { (title: $0.0, date: $0.1) }
+    }
+
     static func similar(_ slug: String) async -> [Title] {
         guard let json = try? await request("/anime/\(slug)/similar") else { return [] }
         var seen = Set<Int>()

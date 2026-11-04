@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import UIKit
+import ActivityKit
 
 struct DownloadItem: Codable, Identifiable, Hashable {
     enum State: String, Codable { case queued, downloading, done, failed }
@@ -74,6 +75,37 @@ final class DownloadManager: NSObject, ObservableObject {
 
     private func persist() {
         if let data = try? JSONEncoder().encode(items) { try? data.write(to: indexURL, options: .atomic) }
+        updateLiveActivity()
+    }
+
+    // MARK: Live Activity
+
+    private var activity: Activity<DownloadActivityAttributes>?
+    private var lastActivityUpdate = Date.distantPast
+
+    private func updateLiveActivity(force: Bool = false) {
+        let active = items.values.filter { $0.state == .downloading || $0.state == .queued }
+        if active.isEmpty {
+            if let activity {
+                let final = DownloadActivityAttributes.ContentState(title: "Загрузки завершены", detail: "", progress: 1, remaining: 0)
+                Task { await activity.end(using: final, dismissalPolicy: .after(Date().addingTimeInterval(5))) }
+                self.activity = nil
+            }
+            return
+        }
+        guard force || Date().timeIntervalSince(lastActivityUpdate) > 2 else { return }
+        lastActivityUpdate = Date()
+        let current = active.first { $0.state == .downloading } ?? active[0]
+        let overall = active.map(\.progress).reduce(0, +) / Double(active.count)
+        let state = DownloadActivityAttributes.ContentState(
+            title: current.title.title,
+            detail: "Серия \(current.episode.number)" + (active.count > 1 ? " · ещё \(active.count - 1)" : ""),
+            progress: overall, remaining: active.count)
+        if let activity {
+            Task { await activity.update(using: state) }
+        } else if ActivityAuthorizationInfo().areActivitiesEnabled {
+            activity = try? Activity.request(attributes: DownloadActivityAttributes(started: Date()), contentState: state)
+        }
     }
 
     // MARK: Queries
@@ -186,6 +218,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             self.items[key]?.progress = progress
             self.items[key]?.bytes = totalBytesWritten
             self.items[key]?.state = .downloading
+            self.updateLiveActivity()
         }
     }
 

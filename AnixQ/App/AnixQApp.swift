@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import CoreSpotlight
 
 @main
 struct AnixQApp: App {
@@ -33,6 +34,7 @@ struct AnixQApp: App {
                     await library.syncBookmarks()
                 }
                 if ShikiSession.isLoggedIn { await library.importShikimori() }
+                await WatchingUpdater.shared.refresh(library: library)
                 await EpisodeNotifier.reschedule(titles: library.watchingTitles)
             }
         }
@@ -48,6 +50,14 @@ struct RootView: View {
     private let autoplaySlug = UserDefaults.standard.string(forKey: "autoplaySlug")
 
     @State private var deepLink: DeepLink?
+    @EnvironmentObject private var library: LibraryStore
+
+    /// Actions requested by Siri / Shortcuts while the app was closed.
+    private func handlePendingAction() {
+        guard UserDefaults.standard.string(forKey: "pendingAction") == "continue" else { return }
+        UserDefaults.standard.removeObject(forKey: "pendingAction")
+        if let last = library.history.first { deepLink = DeepLink(slug: last.title.slugURL) }
+    }
 
     var body: some View {
         if let slug = autoplaySlug {
@@ -61,6 +71,14 @@ struct RootView: View {
                         deepLink = DeepLink(slug: slug)
                     } else if url.host == "schedule" {
                         tab = .schedule
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .anixqPendingAction)) { _ in handlePendingAction() }
+                .onAppear { handlePendingAction() }
+                .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                    if let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                       id.hasPrefix("title:") {
+                        deepLink = DeepLink(slug: String(id.dropFirst(6)))
                     }
                 }
                 .sheet(item: $deepLink) { link in

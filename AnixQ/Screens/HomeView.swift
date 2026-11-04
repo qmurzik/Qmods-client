@@ -67,6 +67,7 @@ final class HomeModel: ObservableObject {
 struct HomeView: View {
     @StateObject private var model = HomeModel()
     @EnvironmentObject private var library: LibraryStore
+    @ObservedObject private var updater = WatchingUpdater.shared
 
     var body: some View {
         ScrollView {
@@ -104,6 +105,10 @@ struct HomeView: View {
                     ShelfSkeleton()
                 }
 
+                Shelf(title: "Вышли новые серии",
+                      titles: library.history.map(\.title).filter { updater.newCount($0.id) > 0 }
+                        + library.watchingTitles.filter { t in updater.newCount(t.id) > 0
+                            && !library.history.contains { $0.title.id == t.id } })
                 Shelf(title: "Смотрю", titles: library.watchingTitles)
                 Shelf(title: "Для вас", titles: model.forYou)
                 Shelf(title: "Новые серии", titles: model.updated,

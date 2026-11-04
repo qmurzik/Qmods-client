@@ -38,6 +38,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var watched: [Int: Set<String>] = [:]               // titleId -> episode numbers
     @Published private(set) var bookmarks: [String: LocalBookmark] = [:]        // slug
     @Published private(set) var isSyncing = false
+    /// titleId -> genre names, remembered when a title page is opened (for statistics).
+    @Published private(set) var genres: [Int: [String]] = [:]
     @Published var lastSyncError: String?
     /// Shikimori import progress: (matched so far, total), nil when idle.
     @Published private(set) var shikiImport: (done: Int, total: Int)?
@@ -48,6 +50,7 @@ final class LibraryStore: ObservableObject {
         var positions: [Int: PlaybackPosition]
         var watched: [Int: Set<String>]
         var bookmarks: [String: LocalBookmark]
+        var genres: [Int: [String]]? = nil
     }
 
     private let fileURL: URL = {
@@ -65,6 +68,7 @@ final class LibraryStore: ObservableObject {
             positions = s.positions
             watched = s.watched
             bookmarks = s.bookmarks
+            genres = s.genres ?? [:]
         }
     }
 
@@ -80,12 +84,14 @@ final class LibraryStore: ObservableObject {
         let ids = watchingTitles.compactMap(\.shikiId) + history.prefix(20).compactMap(\.title.shikiId)
         WidgetShared.write(.init(continueItems: Array(items), watchingShikiIds: Array(Set(ids)), updated: Date()))
         WidgetCenter.shared.reloadAllTimelines()
+        SpotlightIndexer.update(bookmarks.values.map(\.title) + history.map(\.title))
     }
 
     private func save() {
         pushWidgetData()
         saveTask?.cancel()
-        let snapshot = Snapshot(history: history, positions: positions, watched: watched, bookmarks: bookmarks)
+        let snapshot = Snapshot(history: history, positions: positions, watched: watched, bookmarks: bookmarks,
+                                genres: genres)
         let url = fileURL
         saveTask = Task.detached(priority: .utility) {
             try? await Task.sleep(nanoseconds: 400_000_000)
@@ -121,6 +127,12 @@ final class LibraryStore: ObservableObject {
         return min(1, p.position / p.duration)
     }
 
+    func recordGenres(titleId: Int, names: [String]) {
+        guard !names.isEmpty, genres[titleId] != names else { return }
+        genres[titleId] = names
+        save()
+    }
+
     func lastEntry(titleId: Int) -> WatchEntry? {
         history.first { $0.title.id == titleId }
     }
@@ -134,6 +146,7 @@ final class LibraryStore: ObservableObject {
         let already = watched[title.id]?.contains(episode.number) ?? false
         watched[title.id, default: []].insert(episode.number)
         save()
+        WatchingUpdater.shared.episodeWatched(titleId: title.id)
         guard !already else { return }
         let isLast = totalEpisodes > 0 && Int(episode.numberValue) >= totalEpisodes && !title.isOngoing
         let target: BookmarkStatus = isLast ? .completed : .watching

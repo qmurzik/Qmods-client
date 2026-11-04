@@ -87,6 +87,28 @@ struct ShikiPerson: Identifiable, Hashable {
     let isMain: Bool
 }
 
+struct ShikiVideo: Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let kind: String
+    let url: URL
+    let image: URL?
+
+    var isMusic: Bool { ["op", "ed", "op_ed_clip", "clip"].contains(kind) }
+    var kindLabel: String {
+        switch kind {
+        case "op": return "Опенинг"
+        case "ed": return "Эндинг"
+        case "op_ed_clip", "clip": return "Клип"
+        case "pv": return "Трейлер"
+        case "cm": return "Реклама"
+        case "character_trailer": return "Персонаж"
+        case "episode_preview": return "Превью серии"
+        default: return "Видео"
+        }
+    }
+}
+
 struct ShikiAnimeInfo {
     let score: Double?
     let episodes: Int?
@@ -199,6 +221,17 @@ enum ShikiAPI {
         return ShikiAnimeInfo(score: x.double("score"), episodes: x.int("episodes"),
                               episodesAired: x.int("episodes_aired"),
                               nextEpisodeAt: parseDate(x.str("next_episode_at")), status: x.str("status"))
+    }
+
+    static func videos(_ id: Int) async -> [ShikiVideo] {
+        guard let json = try? await request("/api/animes/\(id)/videos", auth: false) as? [JSON] else { return [] }
+        return json.compactMap { v in
+            guard let vid = v.int("id"), let u = v.str("url").flatMap(URL.init(string:)) else { return nil }
+            let img = v.str("image_url").map { $0.replacingOccurrences(of: "http://", with: "https://") }
+                .flatMap(URL.init(string:))
+            return ShikiVideo(id: vid, name: v.str("name") ?? "", kind: v.str("kind") ?? "other", url: u, image: img)
+        }
+        .filter { $0.kind != "episode_preview" }
     }
 
     /// Characters (main first) and key staff of an anime.

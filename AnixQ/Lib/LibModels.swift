@@ -45,6 +45,8 @@ struct Title: Identifiable, Hashable, Codable {
     let statusLabel: String?
     let year: Int?
     let age: String?
+    /// Optional so libraries saved by older versions still decode.
+    var anilistId: Int?
 
     init?(json x: JSON) {
         guard let id = x.int("id"), let slug = x.str("slug_url") else { return nil }
@@ -68,6 +70,7 @@ struct Title: Identifiable, Hashable, Codable {
             s.split(separator: " ").compactMap { Int($0) }.first { $0 > 1900 }
         }
         age = x.obj("ageRestriction")?.str("label")
+        anilistId = x.int("anilist_id")
     }
 
     var title: String { rusName ?? name ?? engName ?? "Без названия" }

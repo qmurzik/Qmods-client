@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import ActivityKit
 
 // MARK: - Helpers
 
@@ -58,6 +59,7 @@ struct ContinueProvider: TimelineProvider {
     private func entry() async -> ContinueEntry {
         let payload = WidgetShared.read()
         let item = payload?.continueItems.first
+        WidgetShared.writeStatus(kind: "continue", note: item == nil ? "нет данных от приложения" : "ok: \(item!.title)")
         return ContinueEntry(date: Date(), item: item, image: await loadImage(item?.cover),
                              hasAppGroup: WidgetShared.fileURL != nil)
     }
@@ -127,16 +129,18 @@ struct AiringItem: Hashable {
     let episode: Int
     let time: Date
     let mine: Bool
+    let slug: String?
 }
 
 struct TodayEntry: TimelineEntry {
     let date: Date
     let items: [AiringItem]
+    var failed = false
 }
 
 struct TodayProvider: TimelineProvider {
     func placeholder(in context: Context) -> TodayEntry {
-        TodayEntry(date: Date(), items: [AiringItem(title: "Онгоинг", episode: 5, time: Date(), mine: true)])
+        TodayEntry(date: Date(), items: [AiringItem(title: "Онгоинг", episode: 5, time: Date(), mine: true, slug: nil)])
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TodayEntry) -> Void) {
@@ -157,20 +161,26 @@ struct TodayProvider: TimelineProvider {
         req.timeoutInterval = 15
         guard let (data, _) = try? await URLSession.shared.data(for: req),
               let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return TodayEntry(date: Date(), items: [])
+            WidgetShared.writeStatus(kind: "upcoming", note: "нет сети / Shikimori недоступен")
+            return TodayEntry(date: Date(), items: [], failed: true)
         }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let cal = Calendar.current
+        // Shikimori lists only the *next* episode of each show, so "today" empties out during the day:
+        // show everything airing in the next 36 hours instead.
+        let now = Date()
+        let horizon = now.addingTimeInterval(36 * 3600)
         let items: [AiringItem] = list.compactMap { x in
             guard let a = x["anime"] as? [String: Any], let id = a["id"] as? Int,
                   let s = x["next_episode_at"] as? String,
                   let at = f.date(from: s) ?? ISO8601DateFormatter().date(from: s),
-                  cal.isDateInToday(at) else { return nil }
+                  at > now.addingTimeInterval(-3600), at < horizon else { return nil }
             let name = (a["russian"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (a["name"] as? String ?? "")
-            return AiringItem(title: name, episode: x["next_episode"] as? Int ?? 0, time: at, mine: mine.contains(id))
+            return AiringItem(title: name, episode: x["next_episode"] as? Int ?? 0, time: at, mine: mine.contains(id),
+                              slug: nil)
         }
         .sorted { ($0.mine ? 0 : 1, $0.time) < ($1.mine ? 0 : 1, $1.time) }
+        WidgetShared.writeStatus(kind: "upcoming", note: "ok: \(items.count) серий, моих \(items.filter(\.mine).count)")
         return TodayEntry(date: Date(), items: items)
     }
 }
@@ -181,16 +191,24 @@ struct TodayWidgetView: View {
 
     private var limit: Int { family == .systemLarge ? 9 : 4 }
 
+    private func dayLabel(_ d: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(d) { return "" }
+        if cal.isDateInTomorrow(d) { return "завтра " }
+        return d.formatted(.dateTime.day().month(.abbreviated)) + " "
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Сегодня выходит").font(.system(size: 13, weight: .bold)).foregroundStyle(accent)
+                Text("Скоро выходит").font(.system(size: 13, weight: .bold)).foregroundStyle(accent)
                 Spacer()
                 Text("\(entry.items.count)").font(.caption2).foregroundStyle(.white.opacity(0.6))
             }
             if entry.items.isEmpty {
                 Spacer()
-                Text("Сегодня ничего не выходит").font(.caption).foregroundStyle(.white.opacity(0.7))
+                Text(entry.failed ? "Нет связи с Shikimori" : "В ближайшие сутки ничего не выходит")
+                    .font(.caption).foregroundStyle(.white.opacity(0.7))
                 Spacer()
             } else {
                 ForEach(entry.items.prefix(limit), id: \.self) { item in
@@ -199,7 +217,8 @@ struct TodayWidgetView: View {
                         Text(item.title).font(.system(size: 12, weight: item.mine ? .semibold : .regular))
                             .lineLimit(1).foregroundStyle(.white)
                         Spacer(minLength: 4)
-                        Text(item.time, style: .time).font(.system(size: 11).monospacedDigit())
+                        Text(dayLabel(item.time) + item.time.formatted(date: .omitted, time: .shortened))
+                            .font(.system(size: 11).monospacedDigit())
                             .foregroundStyle(.white.opacity(0.7))
                     }
                 }
@@ -217,8 +236,8 @@ struct TodayWidget: Widget {
         StaticConfiguration(kind: "AnixQToday", provider: TodayProvider()) { entry in
             TodayWidgetView(entry: entry)
         }
-        .configurationDisplayName("Сегодня выходит")
-        .description("Расписание серий на сегодня, ваши тайтлы — первыми.")
+        .configurationDisplayName("Скоро выходит")
+        .description("Серии, которые выходят в ближайшие сутки, ваши тайтлы — первыми.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
@@ -228,5 +247,49 @@ struct AnixQWidgets: WidgetBundle {
     var body: some Widget {
         ContinueWidget()
         TodayWidget()
+        DownloadLiveActivity()
+    }
+}
+
+// MARK: - Downloads Live Activity
+
+struct DownloadLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: DownloadActivityAttributes.self) { context in
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.circle.fill").font(.title).foregroundStyle(accent)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(context.state.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Text(context.state.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    ProgressView(value: context.state.progress).tint(accent)
+                }
+                Text("\(Int(context.state.progress * 100))%").font(.headline.monospacedDigit())
+            }
+            .padding()
+            .activityBackgroundTint(Color.black.opacity(0.85))
+            .activitySystemActionForegroundColor(.white)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Image(systemName: "arrow.down.circle.fill").foregroundStyle(accent).font(.title2)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text("\(Int(context.state.progress * 100))%").font(.headline.monospacedDigit())
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(context.state.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text(context.state.detail).font(.caption).foregroundStyle(.secondary)
+                        ProgressView(value: context.state.progress).tint(accent)
+                    }
+                }
+            } compactLeading: {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(accent)
+            } compactTrailing: {
+                Text("\(Int(context.state.progress * 100))%").font(.caption2.monospacedDigit())
+            } minimal: {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(accent)
+            }
+        }
     }
 }

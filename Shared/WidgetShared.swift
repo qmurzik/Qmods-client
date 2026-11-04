@@ -35,4 +35,26 @@ enum WidgetShared {
     }
 
     static func titleURL(_ slug: String) -> URL? { URL(string: "anixq://title/\(slug)") }
+
+    /// Heartbeat written by the widget extension so the app can show whether widgets run.
+    struct WidgetStatus: Codable {
+        var date: Date
+        var kind: String
+        var note: String
+    }
+
+    static func writeStatus(kind: String, note: String) {
+        guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?
+            .appendingPathComponent("widget-status-\(kind).json"),
+              let data = try? JSONEncoder().encode(WidgetStatus(date: Date(), kind: kind, note: note)) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    static func readStatuses() -> [WidgetStatus] {
+        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group),
+              let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return [] }
+        return files.filter { $0.lastPathComponent.hasPrefix("widget-status-") }.compactMap {
+            (try? Data(contentsOf: $0)).flatMap { try? JSONDecoder().decode(WidgetStatus.self, from: $0) }
+        }
+    }
 }

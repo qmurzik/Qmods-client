@@ -5,6 +5,7 @@ struct BrowseView: View {
     @State private var query = CatalogQuery()
     @State private var showFilters = false
     @State private var genres: [Genre] = []
+    @State private var showRandom = false
 
     var body: some View {
         ScrollView {
@@ -25,6 +26,10 @@ struct BrowseView: View {
         }
         .navigationTitle("Каталог")
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { showRandom = true } label: { Image(systemName: "dice") }
+                    .accessibilityLabel("Что посмотреть?")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showFilters = true } label: {
                     Image(systemName: query.activeFilterCount > 0
@@ -35,6 +40,7 @@ struct BrowseView: View {
         .sheet(isPresented: $showFilters) {
             FilterSheet(query: $query, genres: genres).presentationDetents([.large])
         }
+        .sheet(isPresented: $showRandom) { RandomPickView() }
         .appDestinations()
         .task {
             if loader.items.isEmpty { await loader.reset(query) }
@@ -175,6 +181,7 @@ struct SearchView: View {
     @State private var genres: [Genre] = []
     @State private var task: Task<Void, Never>?
     @AppStorage("search.recent") private var recentRaw = ""
+    @State private var showTrace = false
 
     private var recent: [String] { recentRaw.split(separator: "\n").map(String.init) }
 
@@ -224,6 +231,13 @@ struct SearchView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Поиск")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showTrace = true } label: { Image(systemName: "camera.viewfinder") }
+                    .accessibilityLabel("Поиск по кадру")
+            }
+        }
+        .sheet(isPresented: $showTrace) { TraceSearchView() }
         .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "Название, оригинал или английское")
         .onSubmit(of: .search) { remember(text) }

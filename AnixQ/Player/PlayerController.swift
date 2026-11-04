@@ -22,7 +22,12 @@ final class PlayerController: ObservableObject {
     @Published private(set) var duration: Double = 0
     @Published private(set) var error: String?
     @Published private(set) var nextCountdown: Int?
-    @Published var rate: Float = 1 { didSet { if isPlaying { player.rate = rate } } }
+    @Published var rate: Float = PlayerPrefs.rememberSpeed ? PlayerPrefs.savedRate : 1 {
+        didSet {
+            if isPlaying { player.rate = rate }
+            if PlayerPrefs.rememberSpeed { PlayerPrefs.savedRate = rate }
+        }
+    }
     @Published var isScrubbing = false
     @Published var fillScreen = false
 

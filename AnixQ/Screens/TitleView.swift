@@ -24,6 +24,9 @@ final class TitleModel: ObservableObject {
     @Published var similar: [Title] = []
     @Published var shiki: ShikiAnimeInfo?
     @Published var characters: [ShikiPerson] = []
+    @Published var videos: [ShikiVideo] = []
+    @Published var franchise: [(title: Title, date: String)] = []
+    @Published var franchiseLoading = false
     @Published var staff: [ShikiPerson] = []
     @Published var loadingEpisodes = true
     @Published var error: String?
@@ -52,6 +55,7 @@ final class TitleModel: ObservableObject {
             let roles = await ShikiAPI.roles(sid)
             characters = roles.characters
             staff = roles.staff
+            videos = await ShikiAPI.videos(sid)
         }
     }
 
@@ -86,6 +90,13 @@ final class TitleModel: ObservableObject {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    func loadFranchise() async {
+        guard franchise.isEmpty, !franchiseLoading else { return }
+        franchiseLoading = true
+        franchise = await LibAPI.franchise(title)
+        franchiseLoading = false
     }
 
     private static func players(_ id: Int?) async -> [LibPlayer] {
@@ -126,6 +137,9 @@ struct TitleView: View {
                     episodesSection
                     infoSection
                 }
+                franchiseSection
+                videoSection("Трейлеры", model.videos.filter { !$0.isMusic })
+                videoSection("Опенинги и эндинги", model.videos.filter(\.isMusic))
                 peopleSection("Персонажи", model.characters, round: true)
                 peopleSection("Создатели", model.staff, round: false)
                 relatedSection
@@ -143,7 +157,10 @@ struct TitleView: View {
                 }
             }
         }
-        .task { if model.episodes.isEmpty { await model.load(lastTeamId: library.lastEntry(titleId: t.id)?.teamId) } }
+        .task {
+            if model.episodes.isEmpty { await model.load(lastTeamId: library.lastEntry(titleId: t.id)?.teamId) }
+            if let g = model.detail?.genres.map(\.name) { library.recordGenres(titleId: t.id, names: g) }
+        }
         .fullScreenCover(item: $play) { req in
             PlayerScreen(title: t, background: model.detail?.backgroundURL, episodes: model.episodes,
                          teams: model.teams, startIndex: req.episodeIndex, team: req.team)
@@ -456,6 +473,96 @@ struct TitleView: View {
         if let v = model.detail?.views { rows.append(("Просмотры", v)) }
         if let a = model.detail?.authors.first { rows.append(("Автор", a)) }
         return rows
+    }
+
+    @ViewBuilder
+    private var franchiseSection: some View {
+        if !model.related.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionTitle(title: "Порядок просмотра") {
+                    if model.franchiseLoading { ProgressView() }
+                }
+                if model.franchise.isEmpty && !model.franchiseLoading {
+                    Button {
+                        Task { await model.loadFranchise() }
+                    } label: {
+                        Label("Показать всю франшизу по порядку", systemImage: "list.number")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(model.franchise.enumerated()), id: \.element.title.id) { i, item in
+                            NavigationLink(value: item.title) {
+                                HStack(spacing: 12) {
+                                    Text("\(i + 1)").font(.headline.monospacedDigit()).frame(width: 26)
+                                        .foregroundStyle(item.title.id == t.id ? Theme.accent : .secondary)
+                                    PosterImage(url: item.title.thumbURL, radius: 6).frame(width: 40)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.title.title).font(.subheadline.weight(item.title.id == t.id ? .bold : .regular))
+                                            .lineLimit(2).foregroundStyle(.primary)
+                                        Text([item.title.typeLabel, String(item.date.prefix(4))].compactMap { $0 }
+                                            .filter { $0 != "9999" }.joined(separator: " · "))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    franchiseMark(item.title)
+                                }
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                            }
+                            .buttonStyle(.plain)
+                            if i < model.franchise.count - 1 { Divider().padding(.leading, 50) }
+                        }
+                    }
+                    .cardStyle()
+                    .padding(.horizontal)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func franchiseMark(_ title: Title) -> some View {
+        let status = library.bookmark(for: title.slugURL)
+        if status == .completed {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        } else if status == .watching || library.lastEntry(titleId: title.id) != nil {
+            Image(systemName: "play.circle.fill").foregroundStyle(Theme.accent)
+        } else if status == .planned {
+            Image(systemName: "calendar").foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func videoSection(_ title: String, _ videos: [ShikiVideo]) -> some View {
+        if !videos.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionTitle(title)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(videos) { v in
+                            Link(destination: v.url) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    ZStack {
+                                        RemoteImage(url: v.image)
+                                        Image(systemName: "play.circle.fill").font(.largeTitle)
+                                            .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.4))
+                                    }
+                                    .frame(width: 200, height: 112)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    Text(v.name.isEmpty ? v.kindLabel : v.name).font(.footnote.weight(.semibold))
+                                        .lineLimit(1).foregroundStyle(.primary)
+                                    Text(v.kindLabel).font(.caption2).foregroundStyle(.secondary)
+                                }
+                                .frame(width: 200, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
     }
 
     @ViewBuilder

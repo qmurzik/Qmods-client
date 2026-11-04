@@ -32,7 +32,7 @@ struct PlayerScreen: View {
     @AppStorage("subs.size") private var subtitleSize: Double = 20
     @AppStorage("subs.background") private var subtitleBackground = true
 
-    enum DragMode { case brightness, volume, seek }
+    enum DragMode { case brightness, volume, seek, ignored }
 
     init(title: Title, background: URL?, episodes: [LibEpisode], teams: [TeamOption], startIndex: Int, team: TeamOption) {
         _c = StateObject(wrappedValue: PlayerController(title: title, episodes: episodes, teams: teams,
@@ -152,7 +152,7 @@ struct PlayerScreen: View {
             .contentShape(Rectangle())
             .onTapGesture(count: 2) {
                 guard !locked else { return }
-                c.seek(by: left ? -10 : 10)
+                c.seek(by: Double(left ? -PlayerPrefs.doubleTapStep : PlayerPrefs.doubleTapStep))
                 ripple = (left, UUID())
             }
             .onTapGesture {
@@ -168,10 +168,12 @@ struct PlayerScreen: View {
             .onChanged { v in
                 if dragMode == nil {
                     if abs(v.translation.width) > abs(v.translation.height) {
-                        dragMode = .seek
+                        dragMode = PlayerPrefs.gestureSeek ? .seek : .ignored
                         dragStart = c.currentTime
                     } else {
-                        dragMode = v.startLocation.x < size.width / 2 ? .brightness : .volume
+                        let left = v.startLocation.x < size.width / 2
+                        if left { dragMode = PlayerPrefs.gestureBrightness ? .brightness : .ignored }
+                        else { dragMode = PlayerPrefs.gestureVolume ? .volume : .ignored }
                         dragStart = dragMode == .brightness ? Double(UIScreen.main.brightness)
                                                             : Double(AVAudioSession.sharedInstance().outputVolume)
                     }
@@ -196,7 +198,7 @@ struct PlayerScreen: View {
                     }
                     gestureHUD = "\(Int(value * 100))%"
                     gestureValue = value
-                case nil: break
+                case .ignored, nil: break
                 }
             }
             .onEnded { _ in
@@ -367,7 +369,8 @@ struct PlayerScreen: View {
         if let r = ripple {
             HStack {
                 if !r.left { Spacer() }
-                Label(r.left ? "−10 с" : "+10 с", systemImage: r.left ? "gobackward.10" : "goforward.10")
+                Label(r.left ? "−\(PlayerPrefs.doubleTapStep) с" : "+\(PlayerPrefs.doubleTapStep) с",
+                      systemImage: r.left ? "gobackward" : "goforward")
                     .font(.headline)
                     .padding(.horizontal, 18).padding(.vertical, 12)
                     .background(.ultraThinMaterial, in: Capsule())

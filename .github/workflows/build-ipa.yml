@@ -147,8 +147,7 @@ jobs:
             echo "===== $name"; cat "player/${name}.log" || true
           }
           run libria -autoplaySource Libria
-          run kodik_adblock -autoplaySource Kodik
-          run kodik_noadblock -autoplaySource Kodik -adblock NO
+          run animelib -autoplayProvider animelib -autoplaySource Kodik
       - uses: actions/upload-artifact@v4
         if: always()
         with:

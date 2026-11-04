@@ -52,6 +52,8 @@ struct ProfileView: View {
                 }
             }
 
+            AnimeLibAccountSection()
+
             Section("История на устройстве") {
                 if history.entries.isEmpty {
                     Text("Пока пусто — начните смотреть что-нибудь").foregroundStyle(.secondary)
@@ -223,5 +225,44 @@ struct DiagnosticsView: View {
         }
         .onAppear { text = DebugLog.read() }
         .refreshable { text = DebugLog.read() }
+    }
+}
+
+struct AnimeLibAccountSection: View {
+    @State private var loggedIn = AnimeLibSession.isLoggedIn
+    @State private var name = AnimeLibSession.username
+    @State private var showLogin = false
+
+    var body: some View {
+        Section {
+            if loggedIn {
+                HStack {
+                    Label(name ?? "AnimeLib", systemImage: "checkmark.seal.fill")
+                    Spacer()
+                    Button("Выйти", role: .destructive) {
+                        AnimeLibSession.clear()
+                        AnimeLibAPI.clearCache()
+                        loggedIn = false
+                        name = nil
+                    }
+                }
+            } else {
+                Button {
+                    showLogin = true
+                } label: {
+                    Label("Войти в AnimeLib", systemImage: "person.badge.key")
+                }
+            }
+        } header: {
+            Text("AnimeLib")
+        } footer: {
+            Text("Дополнительный источник серий. Вход происходит на сайте anilib.me — пароль приложение не видит.")
+        }
+        .sheet(isPresented: $showLogin) {
+            AnimeLibLoginView { ok in
+                loggedIn = AnimeLibSession.isLoggedIn
+                name = AnimeLibSession.username
+            }
+        }
     }
 }

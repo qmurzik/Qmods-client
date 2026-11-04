@@ -281,6 +281,15 @@ struct VoiceoverType: Decodable, Identifiable, Hashable {
     let episodesCount: Int?
     let viewCount: Int?
 
+    init(id: Int, name: String, isSub: Bool, episodesCount: Int? = nil) {
+        self.id = id
+        self.name = name
+        self.icon = nil
+        self.isSub = isSub
+        self.episodesCount = episodesCount
+        self.viewCount = nil
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: DynamicKey.self)
         guard let id = c.int("id") else {
@@ -307,6 +316,12 @@ struct EpisodeSource: Decodable, Identifiable, Hashable {
     let id: Int
     let name: String
     let episodesCount: Int?
+
+    init(id: Int, name: String, episodesCount: Int? = nil) {
+        self.id = id
+        self.name = name
+        self.episodesCount = episodesCount
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: DynamicKey.self)
@@ -340,6 +355,17 @@ struct Episode: Decodable, Identifiable, Hashable {
 
     var id: Int { position }
 
+    init(position: Int, releaseId: Int, sourceId: Int, name: String, url: String) {
+        self.position = position
+        self.releaseId = releaseId
+        self.sourceId = sourceId
+        self.name = name
+        self.url = url
+        self.isFiller = false
+        self.isWatched = false
+        self.isIframe = false
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: DynamicKey.self)
         guard let url = c.string("url") else {
@@ -354,6 +380,19 @@ struct Episode: Decodable, Identifiable, Hashable {
         isWatched = c.value("is_watched") ?? false
         isIframe = c.value("iframe") ?? true
     }
+
+    /// AnimeLib episodes use `animelib://play?episode=<id>&team=<id>&player=animelib|kodik`;
+    /// the actual video is resolved at play time.
+    var animeLibRef: (episodeId: Int, teamId: Int, native: Bool)? {
+        guard url.hasPrefix("animelib://"), let comps = URLComponents(string: url) else { return nil }
+        let items = comps.queryItems ?? []
+        func value(_ k: String) -> String? { items.first { $0.name == k }?.value }
+        guard let e = value("episode").flatMap(Int.init), let t = value("team").flatMap(Int.init) else { return nil }
+        return (e, t, value("player") == "animelib")
+    }
+
+    /// Played by the app's own AVPlayer (AniLibria / Liberty / AnimeLib's own player).
+    var isNative: Bool { isLibria || (animeLibRef?.native ?? false) }
 
     /// AniLibria episodes expose plain HLS playlists, so they play in the native AVPlayer.
     var isLibria: Bool {

@@ -68,6 +68,7 @@ struct ReleaseDetailView: View {
     @State private var tab: DetailTab = .episodes
     @State private var playing: PlayerItem?
     @State private var showDubs = false
+    @State private var showLibLogin = false
 
     init(releaseId: Int) {
         _model = StateObject(wrappedValue: ReleaseModel(releaseId: releaseId))
@@ -94,6 +95,11 @@ struct ReleaseDetailView: View {
             }
         }
         .sheet(isPresented: $showLogin) { LoginView() }
+        .sheet(isPresented: $showLibLogin) {
+            AnimeLibLoginView { ok in
+                if ok, let r = model.release { Task { await episodes.reloadAnimeLib(release: r) } }
+            }
+        }
         .fullScreenCover(item: $playing) { item in
             PlayerView(release: item.release, start: item.episode, model: episodes)
         }
@@ -260,6 +266,17 @@ struct ReleaseDetailView: View {
     @ViewBuilder
     private func episodesSection(_ r: Release) -> some View {
         VStack(alignment: .leading, spacing: 14) {
+            Picker("Источник", selection: Binding(
+                get: { episodes.provider },
+                set: { p in Task { await episodes.switchProvider(p, release: r) } })) {
+                ForEach(EpisodesModel.Provider.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+
+            if episodes.provider == .animelib {
+                animeLibBanner
+            }
+
             if !episodes.types.isEmpty {
                 HStack(spacing: 10) {
                     Menu {
@@ -307,6 +324,41 @@ struct ReleaseDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var animeLibBanner: some View {
+        if !AnimeLibSession.isLoggedIn {
+            Button {
+                showLibLogin = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.badge.key.fill").foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Войти в AnimeLib").font(.system(size: 14, weight: .semibold))
+                        Text("Без входа AnimeLib отдаёт только Kodik. После входа может появиться их плеер без рекламы.")
+                            .font(.caption).foregroundStyle(Theme.secondaryText)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.secondaryText)
+                }
+                .padding(12)
+                .cardStyle(radius: 14)
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(PressableStyle())
+        } else if let anime = episodes.libAnime {
+            HStack(spacing: 6) {
+                Image(systemName: "link")
+                Text("AnimeLib: \(anime.rusName ?? anime.name ?? anime.slugURL)").lineLimit(1)
+                if episodes.loaded && episodes.nativeTypeIds.isEmpty {
+                    Text("· свой плеер недоступен").foregroundStyle(Theme.secondaryText)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(Theme.secondaryText)
         }
     }
 

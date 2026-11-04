@@ -25,6 +25,10 @@ final class NativePlaybackController: NSObject, ObservableObject {
     private var statusObservation: NSKeyValueObservation?
     private var itemObservation: NSKeyValueObservation?
     private var loadedURL: String?
+    /// AnimeLib serves the same file from several mirrors; on failure the next one is tried.
+    private var animeLibHrefs: [(label: String, href: String)] = []
+    private var animeLibServers: [String] = []
+    private var serverIndex = 0
     private var loadStarted = Date()
     private var loggedFirstFrame = false
     var isScrubbing = false
@@ -68,9 +72,15 @@ final class NativePlaybackController: NSObject, ObservableObject {
         error = nil
         isResolving = true
         do {
-            let stream = try await LibriaResolver.resolve(pageURL)
+            let stream: LibriaStream
+            if let ref = episode.animeLibRef {
+                stream = try await resolveAnimeLib(episodeId: ref.episodeId, teamId: ref.teamId)
+            } else {
+                animeLibHrefs = []
+                stream = try await LibriaResolver.resolve(pageURL)
+            }
             guard loadedURL == episode.url else { return }
-            DebugLog.log(String(format: "libria: resolved in %.2fs, qualities %@", Date().timeIntervalSince(loadStarted),
+            DebugLog.log(String(format: "native: resolved in %.2fs, qualities %@", Date().timeIntervalSince(loadStarted),
                                 stream.qualities.map(\.label).joined(separator: ",")))
             qualities = stream.qualities
             skipRange = stream.skipOpening
@@ -78,10 +88,43 @@ final class NativePlaybackController: NSObject, ObservableObject {
             if let preferred { play(preferred, at: nil) }
         } catch {
             guard loadedURL == episode.url else { return }
-            DebugLog.log("libria: resolve failed \(error)")
+            DebugLog.log("native: resolve failed \(error)")
             self.error = error.localizedDescription
         }
         isResolving = false
+    }
+
+    private func resolveAnimeLib(episodeId: Int, teamId: Int) async throws -> LibriaStream {
+        let players = try await AnimeLibAPI.players(episodeId: episodeId)
+        guard let player = players.first(where: { $0.team.id == teamId && $0.isNative }) else {
+            throw AnimeLibAPI.LibError.noVideo
+        }
+        animeLibHrefs = player.qualities
+        animeLibServers = await AnimeLibAPI.videoServers()
+        serverIndex = 0
+        return LibriaStream(qualities: animeLibQualities(), skipOpening: nil)
+    }
+
+    private func animeLibQualities() -> [StreamQuality] {
+        guard serverIndex < animeLibServers.count else { return [] }
+        let server = animeLibServers[serverIndex]
+        return animeLibHrefs.compactMap { q in
+            AnimeLibAPI.videoURL(server: server, href: q.href).map { StreamQuality(label: q.label, url: $0) }
+        }
+        .sorted { $0.height > $1.height }
+    }
+
+    /// Switches to the next AnimeLib mirror, keeping quality and position.
+    private func tryNextServer() -> Bool {
+        guard !animeLibHrefs.isEmpty, serverIndex + 1 < animeLibServers.count else { return false }
+        serverIndex += 1
+        let label = selectedQuality?.label
+        qualities = animeLibQualities()
+        DebugLog.log("native: switching to server \(animeLibServers[serverIndex])")
+        guard let q = qualities.first(where: { $0.label == label }) ?? qualities.first else { return false }
+        error = nil
+        play(q, at: currentTime > 1 ? currentTime : nil)
+        return true
     }
 
     // MARK: Transport
@@ -126,7 +169,10 @@ final class NativePlaybackController: NSObject, ObservableObject {
     private func play(_ quality: StreamQuality, at time: Double?) {
         selectedQuality = quality
         DebugLog.log("libria: play \(quality.label)")
-        let item = AVPlayerItem(url: quality.url)
+        let asset = AVURLAsset(url: quality.url, options: [
+            "AVURLAssetHTTPHeaderFieldsKey": ["Referer": animeLibHrefs.isEmpty ? "https://anixart.tv/" : "https://anilib.me/"]
+        ])
+        let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = 0
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime,
@@ -152,7 +198,8 @@ final class NativePlaybackController: NSObject, ObservableObject {
             if duration.isFinite { self.duration = duration }
             DebugLog.log(String(format: "libria: item ready after %.2fs", Date().timeIntervalSince(loadStarted)))
         case .failed:
-            DebugLog.log("libria: item failed \(error ?? "?")")
+            DebugLog.log("native: item failed \(error ?? "?")")
+            if tryNextServer() { return }
             self.error = error ?? "Не удалось воспроизвести видео"
         default: break
         }

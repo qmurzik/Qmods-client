@@ -17,6 +17,7 @@ struct PlayerView: View {
     @State private var current: Episode
     @State private var isLoadingPage = true
     @State private var reloadToken = 0
+    @State private var webURL: URL?
 
     init(release: Release, start: Episode, model: EpisodesModel) {
         self.release = release
@@ -33,7 +34,7 @@ struct PlayerView: View {
                     .frame(width: geo.size.width,
                            height: landscape ? geo.size.height : geo.size.width * 9 / 16)
                     .overlay(alignment: .top) {
-                        if landscape && !current.isLibria { landscapeBar }
+                        if landscape && !current.isNative { landscapeBar }
                     }
                 if !landscape {
                     ScrollView { controls.padding() }
@@ -58,13 +59,24 @@ struct PlayerView: View {
             if let next = model.episode(after: current) { play(next) }
         }
         .task(id: current.url) {
-            if current.isLibria {
+            if current.isNative {
+                webURL = nil
                 await native.load(current)
-                if let next = model.episode(after: current), let url = next.playerURL {
+                if let next = model.episode(after: current), next.isLibria, let url = next.playerURL {
                     LibriaResolver.prefetch(url)
                 }
             } else {
                 native.stop()
+                if let ref = current.animeLibRef {
+                    // AnimeLib's Kodik link is looked up per episode and team.
+                    webURL = nil
+                    let players = (try? await AnimeLibAPI.players(episodeId: ref.episodeId)) ?? []
+                    webURL = players.first { $0.team.id == ref.teamId && $0.player.lowercased() == "kodik" }?
+                        .kodikSrc.flatMap(AnimeLibAPI.kodikURL)
+                    if webURL == nil { isLoadingPage = false }
+                } else {
+                    webURL = current.playerURL
+                }
                 // Safety net: never leave the spinner over a web player that is already usable.
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
                 if !Task.isCancelled { isLoadingPage = false }
@@ -149,15 +161,15 @@ struct PlayerView: View {
             NativePlayerView(controller: native, isFullscreen: landscape) {
                 OrientationController.set(landscape ? .portrait : .landscape)
             }
-            .opacity(current.isLibria ? 1 : 0)
-            .allowsHitTesting(current.isLibria)
+            .opacity(current.isNative ? 1 : 0)
+            .allowsHitTesting(current.isNative)
 
-            if !current.isLibria, let url = current.playerURL {
+            if !current.isNative, let url = webURL {
                 WebPlayer(url: url, isLoading: $isLoadingPage)
                     .id("\(current.url)#\(reloadToken)")
             }
 
-            if current.isLibria {
+            if current.isNative {
                 if let error = native.error {
                     errorOverlay(error)
                 }
@@ -166,7 +178,7 @@ struct PlayerView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if current.isLibria && native.inSkipRange {
+            if current.isNative && native.inSkipRange {
                 Button {
                     native.skipOpening()
                 } label: {
@@ -249,7 +261,7 @@ struct PlayerView: View {
                 }
             }
 
-            if current.isLibria && !native.qualities.isEmpty {
+            if current.isNative && !native.qualities.isEmpty {
                 Menu {
                     ForEach(native.qualities) { q in
                         Button {
@@ -284,8 +296,8 @@ struct PlayerView: View {
                 }
             }
 
-            Label(current.isLibria
-                  ? "Libria играет во встроенном плеере iOS. Во весь экран — кнопка ⤢ сверху или просто поверните телефон."
+            Label(current.isNative
+                  ? "Плеер без рекламы. Во весь экран — кнопка ⤢ на видео или просто поверните телефон."
                   : "Kodik — сторонний плеер с рекламой, старт может занимать до минуты. Быстрее и без рекламы — озвучки с ⚡ (Libria/Liberty).",
                   systemImage: "info.circle")
                 .font(.caption)
@@ -353,7 +365,7 @@ struct PlayerView: View {
     // MARK: Actions
 
     private func reload() {
-        if current.isLibria {
+        if current.isNative {
             native.reload()
         } else {
             isLoadingPage = true

@@ -145,6 +145,9 @@ struct DebugAutoplayView: View {
             release = try? await AnixartAPI.shared.release(releaseId)
             let typeId = defaults.integer(forKey: "autoplayType")
             await episodes.load(preferredTypeId: typeId > 0 ? typeId : nil, preferredSourceId: nil)
+            if defaults.string(forKey: "autoplayProvider") == "animelib", let release {
+                await episodes.switchProvider(.animelib, release: release)
+            }
             if let name = defaults.string(forKey: "autoplaySource"),
                let source = episodes.sources.first(where: { $0.name.localizedCaseInsensitiveContains(name) }) {
                 await episodes.select(source: source)

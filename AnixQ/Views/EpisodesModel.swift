@@ -17,8 +17,21 @@ final class EpisodesModel: ObservableObject {
 
     nonisolated static func isNativeSource(_ s: EpisodeSource) -> Bool {
         let n = s.name.lowercased()
-        return n.contains("libria") || n.contains("liberty")
+        return n.contains("libria") || n.contains("liberty") || n.contains("animelib")
     }
+
+    enum Provider: String, CaseIterable, Identifiable {
+        case anixart = "Anixart", animelib = "AnimeLib"
+        var id: String { rawValue }
+    }
+
+    @Published private(set) var provider: Provider = .anixart
+    @Published private(set) var libAnime: LibAnime?
+    private var libEpisodes: [LibEpisode] = []
+    /// teamId -> which players that team has (taken from the first episode).
+    private var libTeamPlayers: [Int: (native: Bool, kodik: Bool)] = [:]
+    private static let animeLibSourceId = 1
+    private static let kodikSourceId = 2
 
     /// Dubs with a native source first, keeping the API order otherwise.
     var sortedTypes: [VoiceoverType] {
@@ -53,7 +66,101 @@ final class EpisodesModel: ObservableObject {
         loaded = true
     }
 
+    // MARK: Providers
+
+    func switchProvider(_ p: Provider, release: Release) async {
+        guard p != provider || (p == .animelib && libAnime == nil) else { return }
+        provider = p
+        types = []
+        sources = []
+        episodes = []
+        selectedType = nil
+        selectedSource = nil
+        nativeTypeIds = []
+        error = nil
+        switch p {
+        case .anixart:
+            loaded = false
+            await load(preferredTypeId: preferredTypeId, preferredSourceId: preferredSourceId)
+        case .animelib:
+            await loadAnimeLib(release: release)
+        }
+    }
+
+    /// Re-reads AnimeLib (e.g. after signing in: their own player may only be listed for users).
+    func reloadAnimeLib(release: Release) async {
+        AnimeLibAPI.clearCache()
+        libAnime = nil
+        provider = .animelib
+        types = []
+        sources = []
+        episodes = []
+        nativeTypeIds = []
+        await loadAnimeLib(release: release)
+    }
+
+    private func loadAnimeLib(release: Release) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let anime = try await AnimeLibAPI.match(release)
+            libAnime = anime
+            DebugLog.log("animelib: matched \(anime.slugURL)")
+            libEpisodes = try await AnimeLibAPI.episodes(slugURL: anime.slugURL)
+            guard let first = libEpisodes.first else { throw AnimeLibAPI.LibError.noVideo }
+            let players = try await AnimeLibAPI.players(episodeId: first.id)
+            var order: [LibTeam] = []
+            libTeamPlayers = [:]
+            for p in players {
+                if !order.contains(p.team) { order.append(p.team) }
+                var entry = libTeamPlayers[p.team.id] ?? (false, false)
+                if p.isNative { entry.native = true }
+                if p.player.lowercased() == "kodik" { entry.kodik = true }
+                libTeamPlayers[p.team.id] = entry
+            }
+            nativeTypeIds = Set(libTeamPlayers.filter { $0.value.native }.map(\.key))
+            types = order.map { VoiceoverType(id: $0.id, name: $0.name, isSub: $0.isSubtitles,
+                                              episodesCount: libEpisodes.count) }
+            guard provider == .animelib else { return }
+            let preferred = types.first { nativeTypeIds.contains($0.id) } ?? types.first
+            if let preferred { selectLibTeam(preferred) }
+            if !AnimeLibSession.isLoggedIn && nativeTypeIds.isEmpty {
+                DebugLog.log("animelib: no own player for guests")
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+        loaded = true
+    }
+
+    private func selectLibTeam(_ type: VoiceoverType) {
+        selectedType = type
+        let info = libTeamPlayers[type.id] ?? (false, true)
+        var list: [EpisodeSource] = []
+        if info.native { list.append(EpisodeSource(id: Self.animeLibSourceId, name: "AnimeLib")) }
+        if info.kodik || !info.native { list.append(EpisodeSource(id: Self.kodikSourceId, name: "Kodik")) }
+        sources = list
+        selectLibSource(list[0])
+    }
+
+    private func selectLibSource(_ source: EpisodeSource) {
+        guard let team = selectedType else { return }
+        selectedSource = source
+        let player = source.id == Self.animeLibSourceId ? "animelib" : "kodik"
+        episodes = libEpisodes.enumerated().map { index, e in
+            let position = Int(Double(e.number) ?? Double(index + 1))
+            var title = "\(e.number) серия"
+            if let n = e.name, !n.isEmpty, n != e.number { title += " · " + n }
+            return Episode(position: position, releaseId: releaseId, sourceId: source.id, name: title,
+                           url: "animelib://play?episode=\(e.id)&team=\(team.id)&player=\(player)")
+        }
+    }
+
     func select(type: VoiceoverType) async {
+        if provider == .animelib {
+            selectLibTeam(type)
+            return
+        }
         selectedType = type
         sources = []
         episodes = []
@@ -88,7 +195,7 @@ final class EpisodesModel: ObservableObject {
                         return (id, s.contains(where: EpisodesModel.isNativeSource))
                     }
                 }
-                for await (id, native) in group where native {
+                for await (id, native) in group where native && provider == .anixart {
                     nativeTypeIds.insert(id)
                 }
             }
@@ -96,6 +203,10 @@ final class EpisodesModel: ObservableObject {
     }
 
     func select(source: EpisodeSource) async {
+        if provider == .animelib {
+            selectLibSource(source)
+            return
+        }
         isLoading = true
         defer { isLoading = false }
         await loadEpisodes(source: source)

@@ -62,8 +62,9 @@ struct PlayerView: View {
             if current.isNative {
                 webURL = nil
                 await native.load(current)
-                if let next = model.episode(after: current), next.isLibria, let url = next.playerURL {
-                    LibriaResolver.prefetch(url)
+                if let next = model.episode(after: current) {
+                    if next.isLibria, let url = next.playerURL { LibriaResolver.prefetch(url) }
+                    if let ref = next.animeLibRef, ref.native { AnimeLibAPI.warmUp(episodeId: ref.episodeId, teamId: ref.teamId) }
                 }
             } else {
                 native.stop()

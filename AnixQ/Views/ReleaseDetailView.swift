@@ -531,6 +531,7 @@ struct ReleaseDetailView: View {
 
     private func startPlayback() {
         guard let r = model.release else { return }
+        // (AnimeLib players for the first episode are already warmed up by EpisodesModel.)
         let last = history.last(for: r.id)
         let ep = last.flatMap { l in episodes.episodes.first { $0.position == l.episodePosition } }
             ?? episodes.episodes.first

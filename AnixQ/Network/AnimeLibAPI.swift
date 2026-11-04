@@ -269,31 +269,49 @@ enum AnimeLibAPI {
            Set(cached.1) == Set(servers) {
             return cached.1
         }
-        let results: [(String, Double)] = await withTaskGroup(of: (String, Double).self) { group in
+        // Use the first mirror that answers; the rest keep their original order as fallbacks.
+        let start = Date()
+        let winner: String? = await withTaskGroup(of: String?.self) { group in
             for server in servers {
                 group.addTask {
-                    guard let url = videoURL(server: server, href: href) else { return (server, .infinity) }
+                    guard let url = videoURL(server: server, href: href) else { return nil }
                     var req = URLRequest(url: url)
-                    req.setValue("bytes=0-262143", forHTTPHeaderField: "Range")
+                    req.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
                     req.setValue(site + "/", forHTTPHeaderField: "Referer")
                     req.timeoutInterval = 6
-                    let start = Date()
                     guard let (data, response) = try? await URLSession.shared.data(for: req),
                           let status = (response as? HTTPURLResponse)?.statusCode,
-                          status == 200 || status == 206, !data.isEmpty else { return (server, .infinity) }
-                    return (server, Date().timeIntervalSince(start))
+                          status == 200 || status == 206, !data.isEmpty else { return nil }
+                    return server
                 }
             }
-            var out: [(String, Double)] = []
-            for await r in group { out.append(r) }
-            return out
+            for await result in group {
+                if let result {
+                    group.cancelAll()
+                    return result
+                }
+            }
+            return nil
         }
-        DebugLog.log("animelib: mirrors " + results.map {
-            "\(URL(string: $0.0)?.host ?? $0.0)=" + ($0.1.isFinite ? String(format: "%.2fs", $0.1) : "fail")
-        }.joined(separator: ", "))
-        let ranked = results.sorted { $0.1 < $1.1 }.map(\.0)
+        DebugLog.log(String(format: "animelib: fastest mirror %@ in %.2fs",
+                            winner.flatMap { URL(string: $0)?.host } ?? "none", Date().timeIntervalSince(start)))
+        guard let winner else { return servers }
+        let ranked = [winner] + servers.filter { $0 != winner }
         rankedServers = (Date(), ranked)
         return ranked
+    }
+
+    /// Resolves an episode's players and the fastest mirror ahead of time, so pressing play only
+    /// has to wait for the video itself.
+    @MainActor
+    static func warmUp(episodeId: Int, teamId: Int) {
+        Task {
+            guard let players = try? await players(episodeId: episodeId),
+                  let p = players.first(where: { $0.team.id == teamId && $0.isNative }) else { return }
+            let servers = await videoServers()
+            let href = p.qualities.first { $0.label == "720p" }?.href ?? p.qualities[0].href
+            _ = await rankServers(servers, href: href)
+        }
     }
 
     static func kodikURL(_ src: String) -> URL? {

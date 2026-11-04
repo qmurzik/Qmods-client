@@ -154,6 +154,9 @@ final class EpisodesModel: ObservableObject {
             return Episode(position: position, releaseId: releaseId, sourceId: source.id, name: title,
                            url: "animelib://play?episode=\(e.id)&team=\(team.id)&player=\(player)")
         }
+        if player == "animelib", let first = libEpisodes.first {
+            AnimeLibAPI.warmUp(episodeId: first.id, teamId: team.id)
+        }
     }
 
     func select(type: VoiceoverType) async {

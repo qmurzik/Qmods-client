@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ru-files-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // Все секреты (ACCESS_KEY, токены сервисов) задаются через `wrangler secret put`, а не здесь.
+  "vars": {}
+}

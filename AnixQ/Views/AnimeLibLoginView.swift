@@ -2,12 +2,19 @@ import SwiftUI
 import WebKit
 
 /// Sign-in to AnimeLib on the official site inside a web view. The user types the password into
-/// anilib.me itself; the app only picks up the resulting API token from the site's local storage.
+/// the AnimeLib site itself; the app only picks up the resulting API token from local storage.
+///
+/// anilib.me sits behind a Cloudflare firewall that blocks many VPN / mobile IPs, so the official
+/// mirrors are tried in order and the user can switch manually.
 struct AnimeLibLoginView: View {
     var onDone: (Bool) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
-    @State private var status = "Войдите в свой аккаунт на сайте AnimeLib"
+    @State private var mirrorIndex = 0
+    @State private var status = "Войдите в свой аккаунт AnimeLib"
     @State private var finished = false
+    @State private var reloadToken = 0
+
+    static let mirrors = ["https://v4.animelib.org/ru", "https://animelib.org/ru", "https://anilib.me/ru"]
 
     var body: some View {
         NavigationStack {
@@ -15,22 +22,14 @@ struct AnimeLibLoginView: View {
                 Text(status)
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                     .padding(10)
                     .background(Theme.card)
-                LoginWebView { access, refresh in
-                    guard !finished else { return }
-                    finished = true
-                    AnimeLibSession.token = access
-                    AnimeLibSession.refreshToken = refresh
-                    status = "Готово, проверяем аккаунт…"
-                    DebugLog.log("animelib: token received")
-                    Task {
-                        AnimeLibSession.username = await AnimeLibAPI.me() ?? "AnimeLib"
-                        onDone(true)
-                        dismiss()
-                    }
-                }
+                LoginWebView(url: URL(string: Self.mirrors[mirrorIndex])!,
+                             onBlocked: { mirrorBlocked() },
+                             onToken: { access, refresh in tokenReceived(access, refresh) })
+                    .id("\(mirrorIndex)-\(reloadToken)")
             }
             .navigationTitle("Вход в AnimeLib")
             .navigationBarTitleDisplayMode(.inline)
@@ -41,23 +40,70 @@ struct AnimeLibLoginView: View {
                         dismiss()
                     }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        ForEach(Self.mirrors.indices, id: \.self) { i in
+                            Button {
+                                mirrorIndex = i
+                                reloadToken += 1
+                                status = "Зеркало: \(host(i))"
+                            } label: {
+                                Label(host(i), systemImage: i == mirrorIndex ? "checkmark" : "globe")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "globe")
+                    }
+                }
             }
+        }
+    }
+
+    private func host(_ i: Int) -> String {
+        URL(string: Self.mirrors[i])?.host ?? Self.mirrors[i]
+    }
+
+    private func mirrorBlocked() {
+        DebugLog.log("animelib: login blocked on \(host(mirrorIndex))")
+        if mirrorIndex + 1 < Self.mirrors.count {
+            mirrorIndex += 1
+            status = "Сайт заблокировал вход, пробуем зеркало \(host(mirrorIndex))…"
+        } else {
+            status = "Все зеркала заблокировали вход. Попробуйте выключить или сменить VPN и выберите зеркало вручную (🌐)."
+        }
+    }
+
+    private func tokenReceived(_ access: String, _ refresh: String?) {
+        guard !finished else { return }
+        finished = true
+        AnimeLibSession.token = access
+        AnimeLibSession.refreshToken = refresh
+        status = "Готово, проверяем аккаунт…"
+        DebugLog.log("animelib: token received via \(host(mirrorIndex))")
+        Task {
+            AnimeLibSession.username = await AnimeLibAPI.me() ?? "AnimeLib"
+            onDone(true)
+            dismiss()
         }
     }
 }
 
 private struct LoginWebView: UIViewRepresentable {
+    let url: URL
+    let onBlocked: () -> Void
     let onToken: (String, String?) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onToken: onToken) }
+    func makeCoordinator() -> Coordinator { Coordinator(onBlocked: onBlocked, onToken: onToken) }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
+        // Keep WebKit's real user agent (matching the device's iOS version) and only add the
+        // Safari suffix; a spoofed UA that disagrees with the engine trips bot protection.
+        config.applicationNameForUserAgent = "Version/18.0 Mobile/15E148 Safari/604.1"
         let web = WKWebView(frame: .zero, configuration: config)
-        web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         web.navigationDelegate = context.coordinator
-        web.load(URLRequest(url: URL(string: "https://anilib.me/ru")!))
+        web.load(URLRequest(url: url))
         context.coordinator.start(polling: web)
         return web
     }
@@ -69,14 +115,19 @@ private struct LoginWebView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
+        let onBlocked: () -> Void
         let onToken: (String, String?) -> Void
         var timer: Timer?
+        private var reportedBlock = false
 
-        init(onToken: @escaping (String, String?) -> Void) { self.onToken = onToken }
+        init(onBlocked: @escaping () -> Void, onToken: @escaping (String, String?) -> Void) {
+            self.onBlocked = onBlocked
+            self.onToken = onToken
+        }
 
         /// Every value in localStorage that mentions an access token (the site keeps its auth
         /// state as JSON there after the OAuth redirect).
-        private let script = """
+        private let tokenScript = """
         (function(){
           var out=[];
           for (var i=0;i<localStorage.length;i++){
@@ -87,10 +138,26 @@ private struct LoginWebView: UIViewRepresentable {
         })()
         """
 
+        private let blockScript = """
+        (function(){
+          var t=(document.title||'')+' '+((document.body&&document.body.innerText)||'').slice(0,400);
+          return /you have been blocked|attention required|access denied|error 1020|доступ запрещ/i.test(t);
+        })()
+        """
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            webView.evaluateJavaScript(blockScript) { [weak self] result, _ in
+                guard let self, (result as? Bool) == true, !self.reportedBlock else { return }
+                self.reportedBlock = true
+                self.timer?.invalidate()
+                DispatchQueue.main.async { self.onBlocked() }
+            }
+        }
+
         func start(polling web: WKWebView) {
             timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self, weak web] _ in
                 guard let self, let web else { return }
-                web.evaluateJavaScript(self.script) { result, _ in
+                web.evaluateJavaScript(self.tokenScript) { result, _ in
                     guard let text = result as? String, let data = text.data(using: .utf8),
                           let values = try? JSONSerialization.jsonObject(with: data) as? [String] else { return }
                     for value in values {

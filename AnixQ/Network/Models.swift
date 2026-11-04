@@ -358,7 +358,7 @@ struct Episode: Decodable, Identifiable, Hashable {
     /// AniLibria episodes expose plain HLS playlists, so they play in the native AVPlayer.
     var isLibria: Bool {
         guard let host = playerURL?.host?.lowercased() else { return false }
-        return host.contains("libria") && url.contains("iframe.php")
+        return (host.contains("libria") || host.contains("liberty")) && url.contains("iframe.php")
     }
 
     var playerURL: URL? {

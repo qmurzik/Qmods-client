@@ -12,6 +12,18 @@ final class EpisodesModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var loaded = false
     @Published var error: String?
+    /// Dubs that offer a native (ad-free, fast) AniLibria/Liberty source.
+    @Published private(set) var nativeTypeIds: Set<Int> = []
+
+    nonisolated static func isNativeSource(_ s: EpisodeSource) -> Bool {
+        let n = s.name.lowercased()
+        return n.contains("libria") || n.contains("liberty")
+    }
+
+    /// Dubs with a native source first, keeping the API order otherwise.
+    var sortedTypes: [VoiceoverType] {
+        types.filter { nativeTypeIds.contains($0.id) } + types.filter { !nativeTypeIds.contains($0.id) }
+    }
 
     let releaseId: Int
     private let api = AnixartAPI.shared
@@ -31,6 +43,7 @@ final class EpisodesModel: ObservableObject {
         do {
             types = try await api.voiceovers(releaseId: releaseId)
             isLoading = false
+            scanNativeSources()
             let preferred = types.first { $0.id == preferredTypeId } ?? types.first
             if let preferred { await select(type: preferred) }
         } catch {
@@ -51,14 +64,34 @@ final class EpisodesModel: ObservableObject {
             let s = try await api.sources(releaseId: releaseId, typeId: type.id)
             guard selectedType?.id == type.id else { return }
             sources = s
-            // Prefer the last used player, then Libria (native AVPlayer), then Kodik, then the first one.
+            if s.contains(where: Self.isNativeSource) { nativeTypeIds.insert(type.id) }
+            // Prefer the last used player, then Libria/Liberty (native AVPlayer), then Kodik, then the first one.
             let preferred = s.first { $0.id == preferredSourceId }
-                ?? s.first { $0.name.localizedCaseInsensitiveContains("libria") }
+                ?? s.first(where: Self.isNativeSource)
                 ?? s.first { $0.name.localizedCaseInsensitiveContains("kodik") }
                 ?? s.first
             if let preferred { await loadEpisodes(source: preferred) }
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// Looks up the players of every dub in the background to mark the ad-free ones.
+    private func scanNativeSources() {
+        let ids = types.prefix(20).map(\.id)
+        let releaseId = releaseId
+        Task {
+            await withTaskGroup(of: (Int, Bool).self) { group in
+                for id in ids {
+                    group.addTask {
+                        let s = (try? await AnixartAPI.shared.sources(releaseId: releaseId, typeId: id)) ?? []
+                        return (id, s.contains(where: EpisodesModel.isNativeSource))
+                    }
+                }
+                for await (id, native) in group where native {
+                    nativeTypeIds.insert(id)
+                }
+            }
         }
     }
 

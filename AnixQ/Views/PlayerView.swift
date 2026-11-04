@@ -221,11 +221,12 @@ struct PlayerView: View {
 
             HStack(spacing: 10) {
                 Menu {
-                    ForEach(model.types) { t in
+                    ForEach(model.sortedTypes) { t in
                         Button {
                             switchType(t)
                         } label: {
-                            Label(t.name, systemImage: t.id == model.selectedType?.id ? "checkmark"
+                            Label(model.nativeTypeIds.contains(t.id) ? "⚡ \(t.name) · без рекламы" : t.name,
+                                  systemImage: t.id == model.selectedType?.id ? "checkmark"
                                                        : (t.isSub ? "captions.bubble" : "mic"))
                         }
                     }
@@ -238,7 +239,8 @@ struct PlayerView: View {
                             Button {
                                 switchSource(s)
                             } label: {
-                                Label(s.name, systemImage: s.id == model.selectedSource?.id ? "checkmark" : "play.rectangle")
+                                Label(EpisodesModel.isNativeSource(s) ? "⚡ \(s.name) · без рекламы" : "\(s.name) · с рекламой",
+                                      systemImage: s.id == model.selectedSource?.id ? "checkmark" : "play.rectangle")
                             }
                         }
                     } label: {
@@ -284,7 +286,7 @@ struct PlayerView: View {
 
             Label(current.isLibria
                   ? "Libria играет во встроенном плеере iOS. Во весь экран — кнопка ⤢ сверху или просто поверните телефон."
-                  : "Во весь экран — кнопка ⤢ сверху или поверните телефон. Если видео не стартует — ↻ или другой плеер.",
+                  : "Kodik — сторонний плеер с рекламой, старт может занимать до минуты. Быстрее и без рекламы — озвучки с ⚡ (Libria/Liberty).",
                   systemImage: "info.circle")
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)

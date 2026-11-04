@@ -22,7 +22,7 @@ final class AdBlocker {
         "betweendigital.com", "otm-r.com", "hybrid.ai", "mediametrics.ru", "admixer.net", "adhigh.net",
         "adlook.me", "vidroll.ru", "videonow.ru", "mytarget.ru", "ad.mail.ru", "r.mail.ru", "top-fwz1.mail.ru",
         "smi2.ru", "propellerads.com", "popads.net", "onclickads.net", "exoclick.com", "aj1907.online",
-        "kodikres.com/p-e"
+        "adstag0102.xyz", "adstag.xyz", "kodikres.com/p-e"
     ]
 
     private static var rulesJSON: String {

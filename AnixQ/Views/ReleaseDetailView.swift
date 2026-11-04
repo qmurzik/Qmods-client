@@ -263,7 +263,7 @@ struct ReleaseDetailView: View {
             if !episodes.types.isEmpty {
                 HStack(spacing: 10) {
                     Menu {
-                        ForEach(episodes.types) { t in
+                        ForEach(episodes.sortedTypes) { t in
                             Button {
                                 Task { await episodes.select(type: t) }
                             } label: {
@@ -281,7 +281,8 @@ struct ReleaseDetailView: View {
                                 Button {
                                     Task { await episodes.select(source: s) }
                                 } label: {
-                                    Label(s.name, systemImage: s.id == episodes.selectedSource?.id ? "checkmark" : "play.rectangle")
+                                    Label(EpisodesModel.isNativeSource(s) ? "⚡ \(s.name) · без рекламы" : "\(s.name) · с рекламой",
+                                          systemImage: s.id == episodes.selectedSource?.id ? "checkmark" : "play.rectangle")
                                 }
                             }
                         } label: {
@@ -465,8 +466,10 @@ struct ReleaseDetailView: View {
     // MARK: Helpers
 
     private func dubTitle(_ t: VoiceoverType) -> String {
-        if let n = t.episodesCount { return t.name + " · " + String(n) + " эп." }
-        return t.name
+        var title = t.name
+        if let n = t.episodesCount { title += " · " + String(n) + " эп." }
+        if episodes.nativeTypeIds.contains(t.id) { title = "⚡ " + title + " · без рекламы" }
+        return title
     }
 
     private func playTitle(_ r: Release) -> String {

@@ -27,8 +27,9 @@ enum LibriaResolver {
 
     static func resolve(_ pageURL: URL) async throws -> LibriaStream {
         var comps = URLComponents(url: pageURL, resolvingAgainstBaseURL: false)
-        let episodeParam = comps?.queryItems?.first { $0.name == "ep" }?.value
-        comps?.queryItems = comps?.queryItems?.filter { $0.name != "ep" }
+        let items = comps?.queryItems ?? []
+        let episodeParam = items.first { $0.name == "ep" }?.value
+        comps?.queryItems = items.filter { $0.name != "ep" }
         let key = comps?.url?.absoluteString ?? pageURL.absoluteString
 
         // Stream links are signed and expire, so cached entries are kept for 30 minutes.

@@ -236,6 +236,18 @@ enum BookmarkStatus: Int, CaseIterable, Identifiable, Codable {
         case .onHold: return "pause.circle"
         }
     }
+    init?(shikiStatus: String) {
+        switch shikiStatus {
+        case "watching": self = .watching
+        case "planned": self = .planned
+        case "completed": self = .completed
+        case "dropped": self = .dropped
+        case "on_hold": self = .onHold
+        case "rewatching": self = .rewatching
+        default: return nil
+        }
+    }
+
     /// Matching Shikimori user_rate status.
     var shikiStatus: String {
         switch self {

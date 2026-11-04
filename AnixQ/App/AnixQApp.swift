@@ -27,6 +27,7 @@ struct AnixQApp: App {
                     if LibSession.userId == nil { await LibAPI.loadProfile() }
                     await library.syncBookmarks()
                 }
+                if ShikiSession.isLoggedIn { await library.importShikimori() }
                 await EpisodeNotifier.reschedule(titles: library.watchingTitles)
             }
         }

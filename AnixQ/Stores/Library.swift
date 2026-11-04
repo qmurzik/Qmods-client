@@ -38,6 +38,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var bookmarks: [String: LocalBookmark] = [:]        // slug
     @Published private(set) var isSyncing = false
     @Published var lastSyncError: String?
+    /// Shikimori import progress: (matched so far, total), nil when idle.
+    @Published private(set) var shikiImport: (done: Int, total: Int)?
+    @Published private(set) var shikiImportSummary: String?
 
     private struct Snapshot: Codable {
         var history: [WatchEntry]
@@ -180,6 +183,51 @@ final class LibraryStore: ObservableObject {
             }
             if let status { await ShikiSync.shared.setStatus(title: title, status: status) }
         }
+    }
+
+    /// Pulls the user's Shikimori list: every title is matched to AnimeLib (cached), put into the
+    /// matching folder (unless the user already has an AnimeLib bookmark for it) and its watched
+    /// episodes are marked. Nothing is pushed back, so this is safe to run repeatedly.
+    func importShikimori() async {
+        guard ShikiSession.isLoggedIn, shikiImport == nil else { return }
+        let rates: [ShikiAPI.RemoteRate]
+        do {
+            rates = try await ShikiAPI.animeRates()
+        } catch {
+            lastSyncError = "Shikimori: \(error.localizedDescription)"
+            DebugLog.log("shiki: import failed \(error)")
+            return
+        }
+        DebugLog.log("shiki: importing \(rates.count) titles")
+        shikiImport = (0, rates.count)
+        var added = 0, matched = 0, missing = 0
+        // Active lists first so "Смотрю" fills up quickly.
+        let order: [String: Int] = ["watching": 0, "rewatching": 1, "on_hold": 2, "planned": 3, "completed": 4, "dropped": 5]
+        let sorted = rates.sorted { (order[$0.status] ?? 9) < (order[$1.status] ?? 9) }
+        for (i, rate) in sorted.enumerated() {
+            if let title = await LibAPI.title(shikiId: rate.shikiId, names: [rate.name, rate.russian ?? ""]) {
+                matched += 1
+                if bookmarks[title.slugURL] == nil, let status = BookmarkStatus(shikiStatus: rate.status) {
+                    bookmarks[title.slugURL] = LocalBookmark(title: title, status: status, remoteId: nil,
+                                                             date: Date().addingTimeInterval(-Double(i)))
+                    added += 1
+                }
+                if rate.episodes > 0 {
+                    var set = watched[title.id] ?? []
+                    for n in 1...rate.episodes { set.insert(String(n)) }
+                    watched[title.id] = set
+                }
+            } else {
+                missing += 1
+            }
+            shikiImport = (i + 1, rates.count)
+            if i % 10 == 9 { save() }
+        }
+        save()
+        shikiImport = nil
+        shikiImportSummary = "Shikimori: \(rates.count) тайтлов, найдено на AnimeLib \(matched), добавлено в закладки \(added)"
+            + (missing > 0 ? ", не найдено \(missing)" : "")
+        DebugLog.log(shikiImportSummary ?? "")
     }
 
     /// Pulls every bookmark folder from AnimeLib; remote state wins.

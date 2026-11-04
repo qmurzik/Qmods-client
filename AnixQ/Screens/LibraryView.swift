@@ -23,6 +23,17 @@ struct LibraryView: View {
                 }
             }
 
+            if let p = library.shikiImport {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Загружаем список Shikimori: \(p.done) из \(p.total)").font(.subheadline)
+                        ProgressView(value: Double(p.done), total: Double(max(p.total, 1)))
+                    }
+                }
+            } else if let summary = library.shikiImportSummary {
+                Section { Label(summary, systemImage: "checkmark.circle").font(.footnote) }
+            }
+
             if let e = library.lastSyncError {
                 Section { Label(e, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange) }
             }
@@ -81,7 +92,10 @@ struct LibraryView: View {
             LibLoginView { ok in if ok { Task { await library.syncBookmarks() } } }
         }
         .appDestinations()
-        .refreshable { await library.syncBookmarks() }
+        .refreshable {
+            await library.syncBookmarks()
+            await library.importShikimori()
+        }
     }
 }
 
@@ -156,6 +170,10 @@ struct SettingsView: View {
                     }
                     if shiki.isLoggedIn {
                         LabeledContent("Shikimori", value: ShikiSession.nickname ?? "вход выполнен")
+                        Button(library.shikiImport == nil ? "Загрузить мой список с Shikimori" : "Загружаем список…") {
+                            Task { await library.importShikimori() }
+                        }
+                        .disabled(library.shikiImport != nil)
                         Button("Выйти из Shikimori", role: .destructive) {
                             ShikiSession.clear()
                             shiki.refreshState()
@@ -212,7 +230,9 @@ struct SettingsView: View {
                     if ok { Task { await library.syncBookmarks() } }
                 }
             }
-            .sheet(isPresented: $showShikiLogin) { ShikiLoginView() }
+            .sheet(isPresented: $showShikiLogin) {
+                ShikiLoginView { Task { await library.importShikimori() } }
+            }
             .confirmationDialog("Очистить историю и прогресс?", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("Очистить", role: .destructive) { library.clearHistory() }
             }

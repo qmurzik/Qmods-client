@@ -238,6 +238,35 @@ enum ShikiAPI {
 
     // MARK: User rates
 
+    struct RemoteRate {
+        let shikiId: Int
+        let name: String
+        let russian: String?
+        let status: String
+        let episodes: Int
+        let score: Int
+    }
+
+    /// Whole anime list of the signed-in user.
+    static func animeRates() async throws -> [RemoteRate] {
+        guard let uid = ShikiSession.userId else { throw LibError.unauthorized }
+        var all: [RemoteRate] = []
+        var page = 1
+        while page <= 20 {
+            let json = try await request("/api/users/\(uid)/anime_rates?limit=500&page=\(page)")
+            let items = json as? [JSON] ?? []
+            for x in items {
+                guard let a = x.obj("anime"), let id = a.int("id") else { continue }
+                all.append(RemoteRate(shikiId: id, name: a.str("name") ?? "", russian: a.str("russian"),
+                                      status: x.str("status") ?? "watching", episodes: x.int("episodes") ?? 0,
+                                      score: x.int("score") ?? 0))
+            }
+            if items.count < 500 { break }
+            page += 1
+        }
+        return all
+    }
+
     static func userRate(animeId: Int) async throws -> JSON? {
         guard let uid = ShikiSession.userId else { return nil }
         let json = try await request("/api/v2/user_rates?user_id=\(uid)&target_id=\(animeId)&target_type=Anime")

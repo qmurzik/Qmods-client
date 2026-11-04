@@ -6,7 +6,7 @@ import WebKit
 ///
 /// anilib.me sits behind a Cloudflare firewall that blocks many VPN / mobile IPs, so the official
 /// mirrors are tried in order and the user can switch manually.
-struct AnimeLibLoginView: View {
+struct LibLoginView: View {
     var onDone: (Bool) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @State private var mirrorIndex = 0
@@ -76,12 +76,13 @@ struct AnimeLibLoginView: View {
     private func tokenReceived(_ access: String, _ refresh: String?) {
         guard !finished else { return }
         finished = true
-        AnimeLibSession.token = access
-        AnimeLibSession.refreshToken = refresh
+        LibSession.token = access
+        LibSession.refreshToken = refresh
         status = "Готово, проверяем аккаунт…"
         DebugLog.log("animelib: token received via \(host(mirrorIndex))")
         Task {
-            AnimeLibSession.username = await AnimeLibAPI.me() ?? "AnimeLib"
+            await LibAPI.loadProfile()
+            LibAPI.clearCache()
             onDone(true)
             dismiss()
         }

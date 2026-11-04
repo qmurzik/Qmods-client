@@ -98,10 +98,11 @@ jobs:
             xcrun simctl io "$DEVICE" screenshot "shots/$name.png"
           }
           shot home
-          shot catalog -screenshotTab 1
-          shot search -screenshotTab 2
-          shot schedule -screenshotTab 3
-          shot release -screenshotRelease 20024
+          shot browse -screenshotTab 1
+          shot schedule -screenshotTab 2
+          shot library -screenshotTab 3
+          shot search -screenshotTab 4
+          shot title -screenshotSlug 14421--kimetsu-no-yaiba-anime
       - uses: actions/upload-artifact@v4
         with:
           name: screenshots
@@ -132,7 +133,7 @@ jobs:
           run() { # name, args...
             name=$1; shift
             xcrun simctl terminate "$DEVICE" ru.qmods.anixq 2>/dev/null || true
-            xcrun simctl launch "$DEVICE" ru.qmods.anixq -autoplayRelease 2804 -autoplayType 2 \
+            xcrun simctl launch "$DEVICE" ru.qmods.anixq -autoplaySlug 14421--kimetsu-no-yaiba-anime \
               -autoLandscapeAfter 45 -debugAutoClick YES "$@"
             for t in 10 25 40; do
               sleep 15
@@ -146,8 +147,7 @@ jobs:
             cp "$DATA/Documents/debug.log" "player/${name}.log" || true
             echo "===== $name"; cat "player/${name}.log" || true
           }
-          run libria -autoplaySource Libria
-          run animelib -autoplayProvider animelib -autoplaySource Kodik
+          run kodik_guest -autoplayTeam AniLibria
       - uses: actions/upload-artifact@v4
         if: always()
         with:

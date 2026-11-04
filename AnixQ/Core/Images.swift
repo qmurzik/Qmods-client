@@ -28,7 +28,7 @@ actor ImagePipeline {
         config.timeoutIntervalForRequest = 20
         config.httpMaximumConnectionsPerHost = 8
         config.httpAdditionalHeaders = [
-            "User-Agent": "AnixartApp/9.0 BETA 5-25062213 (Android 9; SDK 28; arm64-v8a; samsung SM-G975N; en)",
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
             "Accept": "image/webp,image/jpeg,image/png,image/*;q=0.8"
         ]
         return URLSession(configuration: config)
@@ -70,7 +70,12 @@ actor ImagePipeline {
         for candidate in candidates(for: url) {
             for attempt in 0..<2 {
                 do {
-                    let (data, response) = try await session.data(from: candidate)
+                    var req = URLRequest(url: candidate)
+                    // AnimeLib covers are only served with the site as referer.
+                    if candidate.host?.contains("imglib") == true || candidate.host?.contains("cdnlibs") == true {
+                        req.setValue("https://anilib.me/", forHTTPHeaderField: "Referer")
+                    }
+                    let (data, response) = try await session.data(for: req)
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 200
                     if status == 404 { break }
                     guard (200..<300).contains(status), let image = UIImage(data: data) else { continue }

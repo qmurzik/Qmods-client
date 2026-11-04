@@ -17,12 +17,35 @@ targets:
     platform: iOS
     sources:
       - path: AnixQ
+      - path: Shared
+    dependencies:
+      - target: AnixQWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.qmods.anixq
         PRODUCT_NAME: AnixQ
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Dark AppIcon-Ocean AppIcon-Mint AppIcon-Sunset"
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AnixQ/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AnixQ/AnixQ.entitlements
+
+  AnixQWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: AnixQWidget
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ru.qmods.anixq.widget
+        PRODUCT_NAME: AnixQWidget
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: AnixQWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AnixQWidget/AnixQWidget.entitlements
+        SKIP_INSTALL: YES

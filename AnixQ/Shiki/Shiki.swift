@@ -79,6 +79,14 @@ struct ShikiCalendarItem: Identifiable, Hashable {
     var title: String { russian?.nilIfEmpty ?? name }
 }
 
+struct ShikiPerson: Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let image: URL?
+    let role: String
+    let isMain: Bool
+}
+
 struct ShikiAnimeInfo {
     let score: Double?
     let episodes: Int?
@@ -191,6 +199,34 @@ enum ShikiAPI {
         return ShikiAnimeInfo(score: x.double("score"), episodes: x.int("episodes"),
                               episodesAired: x.int("episodes_aired"),
                               nextEpisodeAt: parseDate(x.str("next_episode_at")), status: x.str("status"))
+    }
+
+    /// Characters (main first) and key staff of an anime.
+    static func roles(_ id: Int) async -> (characters: [ShikiPerson], staff: [ShikiPerson]) {
+        guard let json = try? await request("/api/animes/\(id)/roles", auth: false) as? [JSON] else { return ([], []) }
+        var characters: [ShikiPerson] = []
+        var staff: [ShikiPerson] = []
+        for r in json {
+            let roles = r["roles_russian"] as? [String] ?? r["roles"] as? [String] ?? []
+            let isMain = (r["roles"] as? [String] ?? []).contains("Main")
+            func person(_ o: JSON) -> ShikiPerson? {
+                guard let pid = o.int("id") else { return nil }
+                let img = o.obj("image")?.str("preview").flatMap { $0.contains("missing") ? nil : URL(string: host + $0) }
+                return ShikiPerson(id: pid, name: o.str("russian") ?? o.str("name") ?? "", image: img,
+                                   role: roles.joined(separator: ", "), isMain: isMain)
+            }
+            if let c = r.obj("character"), let p = person(c) {
+                characters.append(p)
+            } else if let o = r.obj("person"), let p = person(o) {
+                let key = Set(r["roles"] as? [String] ?? [])
+                if !key.isDisjoint(with: ["Director", "Original Creator", "Series Composition", "Music",
+                                          "Character Design", "Chief Animation Director"]) {
+                    staff.append(p)
+                }
+            }
+        }
+        characters.sort { $0.isMain && !$1.isMain }
+        return (Array(characters.prefix(30)), Array(staff.prefix(12)))
     }
 
     // MARK: OAuth

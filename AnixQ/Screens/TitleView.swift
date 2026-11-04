@@ -23,6 +23,8 @@ final class TitleModel: ObservableObject {
     @Published var related: [RelatedTitle] = []
     @Published var similar: [Title] = []
     @Published var shiki: ShikiAnimeInfo?
+    @Published var characters: [ShikiPerson] = []
+    @Published var staff: [ShikiPerson] = []
     @Published var loadingEpisodes = true
     @Published var error: String?
 
@@ -45,7 +47,12 @@ final class TitleModel: ObservableObject {
         detail = await d.value
         related = await r.value
         similar = await s.value
-        if let sid = (detail?.title ?? title).shikiId { shiki = try? await ShikiAPI.anime(sid) }
+        if let sid = (detail?.title ?? title).shikiId {
+            shiki = try? await ShikiAPI.anime(sid)
+            let roles = await ShikiAPI.roles(sid)
+            characters = roles.characters
+            staff = roles.staff
+        }
     }
 
     func loadEpisodes(lastTeamId: Int?) async {
@@ -113,10 +120,14 @@ struct TitleView: View {
             VStack(alignment: .leading, spacing: 26) {
                 header
                 VStack(alignment: .leading, spacing: 26) {
-                    if let summary = model.detail?.summary { about(summary) }
+                    if let summary = model.detail?.summary {
+                        about(summary).frame(maxWidth: Layout.maxTextWidth, alignment: .leading)
+                    }
                     episodesSection
                     infoSection
                 }
+                peopleSection("Персонажи", model.characters, round: true)
+                peopleSection("Создатели", model.staff, round: false)
                 relatedSection
                 Shelf(title: "Похожие", titles: model.similar)
             }
@@ -145,7 +156,7 @@ struct TitleView: View {
     private var header: some View {
         ZStack(alignment: .bottom) {
             RemoteImage(url: model.detail?.backgroundURL ?? t.coverURL)
-                .frame(height: 520)
+                .frame(height: Layout.headerHeight)
                 .frame(maxWidth: .infinity)
                 .blur(radius: model.detail?.backgroundURL == nil ? 18 : 0)
                 .clipped()
@@ -166,11 +177,11 @@ struct TitleView: View {
                     .padding(.horizontal)
                 Text(metaLine).font(.footnote.weight(.medium)).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).padding(.horizontal)
-                playButtons.padding(.horizontal).padding(.top, 6)
+                playButtons.padding(.horizontal).padding(.top, 6).frame(maxWidth: 560)
             }
             .padding(.bottom, 8)
         }
-        .frame(height: 520)
+        .frame(height: Layout.headerHeight)
     }
 
     private var metaLine: String {
@@ -445,6 +456,38 @@ struct TitleView: View {
         if let v = model.detail?.views { rows.append(("Просмотры", v)) }
         if let a = model.detail?.authors.first { rows.append(("Автор", a)) }
         return rows
+    }
+
+    @ViewBuilder
+    private func peopleSection(_ title: String, _ people: [ShikiPerson], round: Bool) -> some View {
+        if !people.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionTitle(title)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 14) {
+                        ForEach(people) { p in
+                            VStack(spacing: 6) {
+                                Theme.card
+                                    .frame(width: 76, height: round ? 76 : 100)
+                                    .overlay {
+                                        if p.image == nil {
+                                            Image(systemName: "person.fill").font(.title).foregroundStyle(.tertiary)
+                                        } else {
+                                            RemoteImage(url: p.image)
+                                        }
+                                    }
+                                    .clipShape(RoundedRectangle(cornerRadius: round ? 38 : 10, style: .continuous))
+                                Text(p.name).font(.caption.weight(.semibold)).lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                Text(p.role).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .frame(width: 86)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
     }
 
     @ViewBuilder

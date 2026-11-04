@@ -170,6 +170,9 @@ struct SettingsView: View {
     @State private var quality = PlayerPrefs.preferredHeight
     @State private var downloadQuality = PlayerPrefs.downloadHeight
     @AppStorage("adblock") private var adblock = true
+    @AppStorage("accent") private var accentRaw = AccentChoice.rose.rawValue
+    @AppStorage("appIcon") private var appIcon = AppIconChoice.standard.rawValue
+    @AppStorage("subs.alwaysOn") private var subsAlwaysOn = false
     @State private var confirmClear = false
 
     var body: some View {
@@ -239,7 +242,44 @@ struct SettingsView: View {
                         Text("360p").tag(360)
                     }
                     .onChange(of: quality) { PlayerPrefs.preferredHeight = $0 }
+                    Toggle("Субтитры у озвучек, если есть", isOn: $subsAlwaysOn)
                     Toggle("Блокировать рекламу в Kodik", isOn: $adblock)
+                }
+
+                Section("Оформление") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(AppIconChoice.allCases) { icon in
+                                Button {
+                                    UIApplication.shared.setAlternateIconName(icon.alternateName) { err in
+                                        if let err { DebugLog.log("icon: \(err.localizedDescription)") }
+                                    }
+                                    appIcon = icon.rawValue
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Image(icon.preview).resizable()
+                                            .frame(width: 58, height: 58)
+                                            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                                            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                                .stroke(appIcon == icon.rawValue ? Theme.accent : .clear, lineWidth: 3))
+                                        Text(icon.title).font(.caption2).foregroundStyle(.primary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    HStack(spacing: 12) {
+                        ForEach(AccentChoice.allCases) { a in
+                            Circle()
+                                .fill(a.color)
+                                .frame(width: 28, height: 28)
+                                .overlay(Circle().stroke(.white, lineWidth: accentRaw == a.rawValue ? 3 : 0))
+                                .onTapGesture { accentRaw = a.rawValue }
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
 
                 Section("Данные") {

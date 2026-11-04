@@ -3,7 +3,8 @@ import UIKit
 
 /// Native iOS look: system materials and semantic colours, one accent, SF typography.
 enum Theme {
-    static let accent = Color("AccentColor")
+    /// User-selectable accent (Settings → Оформление).
+    static var accent: Color { AccentChoice.current.color }
     static let background = Color(.systemBackground)
     static let groupedBackground = Color(.systemGroupedBackground)
     static let card = Color(.secondarySystemBackground)
@@ -26,6 +27,51 @@ enum Theme {
             return a
         }()
     }
+}
+
+enum Layout {
+    static var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+    static var heroHeight: CGFloat { isPad ? 680 : 540 }
+    static var headerHeight: CGFloat { isPad ? 620 : 520 }
+    /// Readable width for text blocks on iPad.
+    static let maxTextWidth: CGFloat = 760
+}
+
+enum AccentChoice: String, CaseIterable, Identifiable {
+    case rose, red, orange, yellow, green, mint, blue, purple
+
+    var id: String { rawValue }
+    static var current: AccentChoice {
+        AccentChoice(rawValue: UserDefaults.standard.string(forKey: "accent") ?? "") ?? .rose
+    }
+    var color: Color {
+        switch self {
+        case .rose: return Color("AccentColor")
+        case .red: return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green: return .green
+        case .mint: return .mint
+        case .blue: return .blue
+        case .purple: return .purple
+        }
+    }
+}
+
+enum AppIconChoice: String, CaseIterable, Identifiable {
+    case standard = "AppIcon", dark = "AppIcon-Dark", ocean = "AppIcon-Ocean", mint = "AppIcon-Mint", sunset = "AppIcon-Sunset"
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .standard: return "Классика"
+        case .dark: return "Тёмная"
+        case .ocean: return "Океан"
+        case .mint: return "Мята"
+        case .sunset: return "Закат"
+        }
+    }
+    var preview: String { rawValue + "-Preview" }
+    var alternateName: String? { self == .standard ? nil : rawValue }
 }
 
 // MARK: - Shared building blocks

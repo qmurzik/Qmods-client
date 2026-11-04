@@ -14,8 +14,21 @@ final class HomeModel: ObservableObject {
     @Published var popular: [Title] = []
     @Published var top: [Title] = []
     @Published var newest: [Title] = []
+    @Published var forYou: [Title] = []
     @Published var loaded = false
     @Published var error: String?
+
+    /// "Для вас": titles similar to what the user watched recently, minus what they already know.
+    func loadForYou(seeds: [Title], known: Set<Int>) async {
+        guard !seeds.isEmpty else { forYou = []; return }
+        var seen = known
+        var out: [Title] = []
+        let tasks = seeds.prefix(5).map { seed in Task { await LibAPI.similar(seed.slugURL) } }
+        for t in tasks {
+            for title in await t.value where seen.insert(title.id).inserted { out.append(title) }
+        }
+        forYou = Array(out.prefix(24))
+    }
 
     func load() async {
         error = nil
@@ -92,6 +105,7 @@ struct HomeView: View {
                 }
 
                 Shelf(title: "Смотрю", titles: library.watchingTitles)
+                Shelf(title: "Для вас", titles: model.forYou)
                 Shelf(title: "Новые серии", titles: model.updated,
                       seeAll: CatalogRoute(title: "Новые серии", query: CatalogQuery(sort: .updated)))
                 Shelf(title: "Онгоинги", titles: model.ongoing,
@@ -113,7 +127,12 @@ struct HomeView: View {
         .toolbar(.hidden, for: .navigationBar)
         .appDestinations()
         .refreshable { await model.load() }
-        .task { if !model.loaded { await model.load() } }
+        .task {
+            if !model.loaded { await model.load() }
+            let known = Set(library.history.map(\.title.id)).union(library.bookmarks.values.map(\.title.id))
+            let seeds = library.history.map(\.title) + library.watchingTitles + library.titles(in: .favorite)
+            await model.loadForYou(seeds: seeds, known: known)
+        }
     }
 }
 
@@ -130,7 +149,7 @@ struct HeroCarousel: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .always))
-        .frame(height: 540)
+        .frame(height: Layout.heroHeight)
         .onReceive(timer) { _ in
             guard items.count > 1 else { return }
             withAnimation(.easeInOut(duration: 0.6)) { index = (index + 1) % items.count }
@@ -171,6 +190,7 @@ struct HeroCarousel: View {
                     .frame(width: 50)
                 }
                 .padding(.horizontal, 40)
+                .frame(maxWidth: 520)
             }
             .padding(.bottom, 44)
         }

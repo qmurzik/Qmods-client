@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import WidgetKit
 
 struct WatchEntry: Codable, Identifiable, Hashable {
     var title: Title
@@ -67,7 +68,22 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    private var lastWidgetPush = Date.distantPast
+
+    private func pushWidgetData() {
+        guard Date().timeIntervalSince(lastWidgetPush) > 20 else { return }
+        lastWidgetPush = Date()
+        let items = history.prefix(5).map {
+            WidgetShared.ContinueItem(title: $0.title.title, slug: $0.title.slugURL, episode: $0.episodeNumber,
+                                      team: $0.teamName, progress: $0.progress, cover: $0.title.cover)
+        }
+        let ids = watchingTitles.compactMap(\.shikiId) + history.prefix(20).compactMap(\.title.shikiId)
+        WidgetShared.write(.init(continueItems: Array(items), watchingShikiIds: Array(Set(ids)), updated: Date()))
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     private func save() {
+        pushWidgetData()
         saveTask?.cancel()
         let snapshot = Snapshot(history: history, positions: positions, watched: watched, bookmarks: bookmarks)
         let url = fileURL

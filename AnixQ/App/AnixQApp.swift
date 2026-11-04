@@ -6,6 +6,8 @@ struct AnixQApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var library = LibraryStore()
     @StateObject private var downloads = DownloadManager.shared
+    @AppStorage("accent") private var accentRaw = AccentChoice.rose.rawValue
+    private var accent: AccentChoice { AccentChoice(rawValue: accentRaw) ?? .rose }
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -17,10 +19,10 @@ struct AnixQApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .tint(accent.color)
                 .environmentObject(library)
                 .environmentObject(downloads)
                 .preferredColorScheme(.dark)
-                .tint(Theme.accent)
                 .task { AdBlocker.shared.warmUp() }
         }
         .onChange(of: scenePhase) { phase in
@@ -45,11 +47,33 @@ struct RootView: View {
     private let screenshotSlug = UserDefaults.standard.string(forKey: "screenshotSlug")
     private let autoplaySlug = UserDefaults.standard.string(forKey: "autoplaySlug")
 
+    @State private var deepLink: DeepLink?
+
     var body: some View {
         if let slug = autoplaySlug {
             DebugAutoplayView(slug: slug)
         } else {
             tabs
+                // anixq://title/<slug> (widgets), anixq://schedule
+                .onOpenURL { url in
+                    guard url.scheme == "anixq" else { return }
+                    if url.host == "title", let slug = url.pathComponents.dropFirst().first {
+                        deepLink = DeepLink(slug: slug)
+                    } else if url.host == "schedule" {
+                        tab = .schedule
+                    }
+                }
+                .sheet(item: $deepLink) { link in
+                    NavigationStack {
+                        DebugTitleLoader(slug: link.slug)
+                            .appDestinations()
+                            .toolbar {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    Button("Закрыть") { deepLink = nil }
+                                }
+                            }
+                    }
+                }
         }
     }
 
@@ -85,6 +109,11 @@ struct RootView: View {
 }
 
 /// Opens a title page directly (CI screenshots).
+struct DeepLink: Identifiable {
+    let slug: String
+    var id: String { slug }
+}
+
 struct DebugTitleLoader: View {
     let slug: String
     @State private var title: Title?

@@ -60,7 +60,7 @@ final class NativePlaybackController: NSObject, ObservableObject {
         loadedURL = episode.url
         loadStarted = Date()
         loggedFirstFrame = false
-        DebugLog.log("libria: resolve start \(pageURL.absoluteString)")
+        DebugLog.log("native: resolve start \(pageURL.absoluteString)")
         player.pause()
         player.replaceCurrentItem(with: nil)
         qualities = []
@@ -100,7 +100,10 @@ final class NativePlaybackController: NSObject, ObservableObject {
             throw AnimeLibAPI.LibError.noVideo
         }
         animeLibHrefs = player.qualities
-        animeLibServers = await AnimeLibAPI.videoServers()
+        let servers = await AnimeLibAPI.videoServers()
+        // Probe a small range of the file on every mirror and use the fastest first.
+        let probeHref = player.qualities.first { $0.label == "720p" }?.href ?? player.qualities[0].href
+        animeLibServers = await AnimeLibAPI.rankServers(servers, href: probeHref)
         serverIndex = 0
         return LibriaStream(qualities: animeLibQualities(), skipOpening: nil)
     }
@@ -168,7 +171,7 @@ final class NativePlaybackController: NSObject, ObservableObject {
 
     private func play(_ quality: StreamQuality, at time: Double?) {
         selectedQuality = quality
-        DebugLog.log("libria: play \(quality.label)")
+        DebugLog.log("native: play \(quality.label)")
         let asset = AVURLAsset(url: quality.url, options: [
             "AVURLAssetHTTPHeaderFieldsKey": ["Referer": animeLibHrefs.isEmpty ? "https://anixart.tv/" : "https://anilib.me/"]
         ])
@@ -196,7 +199,7 @@ final class NativePlaybackController: NSObject, ObservableObject {
         switch status {
         case .readyToPlay:
             if duration.isFinite { self.duration = duration }
-            DebugLog.log(String(format: "libria: item ready after %.2fs", Date().timeIntervalSince(loadStarted)))
+            DebugLog.log(String(format: "native: item ready after %.2fs", Date().timeIntervalSince(loadStarted)))
         case .failed:
             DebugLog.log("native: item failed \(error ?? "?")")
             if tryNextServer() { return }
@@ -210,7 +213,7 @@ final class NativePlaybackController: NSObject, ObservableObject {
         isBuffering = status == .waitingToPlayAtSpecifiedRate
         if status == .playing && !loggedFirstFrame {
             loggedFirstFrame = true
-            DebugLog.log(String(format: "libria: PLAYING after %.2fs", Date().timeIntervalSince(loadStarted)))
+            DebugLog.log(String(format: "native: PLAYING after %.2fs", Date().timeIntervalSince(loadStarted)))
         }
     }
 

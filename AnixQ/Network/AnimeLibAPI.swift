@@ -259,6 +259,43 @@ enum AnimeLibAPI {
         return URL(string: encoded)
     }
 
+    private static var rankedServers: (Date, [String])?
+
+    /// Orders mirrors by time-to-first-byte of a 256 KB range request (fastest first, failures last).
+    /// The ranking is reused for 20 minutes.
+    @MainActor
+    static func rankServers(_ servers: [String], href: String) async -> [String] {
+        if let cached = rankedServers, Date().timeIntervalSince(cached.0) < 20 * 60,
+           Set(cached.1) == Set(servers) {
+            return cached.1
+        }
+        let results: [(String, Double)] = await withTaskGroup(of: (String, Double).self) { group in
+            for server in servers {
+                group.addTask {
+                    guard let url = videoURL(server: server, href: href) else { return (server, .infinity) }
+                    var req = URLRequest(url: url)
+                    req.setValue("bytes=0-262143", forHTTPHeaderField: "Range")
+                    req.setValue(site + "/", forHTTPHeaderField: "Referer")
+                    req.timeoutInterval = 6
+                    let start = Date()
+                    guard let (data, response) = try? await URLSession.shared.data(for: req),
+                          let status = (response as? HTTPURLResponse)?.statusCode,
+                          status == 200 || status == 206, !data.isEmpty else { return (server, .infinity) }
+                    return (server, Date().timeIntervalSince(start))
+                }
+            }
+            var out: [(String, Double)] = []
+            for await r in group { out.append(r) }
+            return out
+        }
+        DebugLog.log("animelib: mirrors " + results.map {
+            "\(URL(string: $0.0)?.host ?? $0.0)=" + ($0.1.isFinite ? String(format: "%.2fs", $0.1) : "fail")
+        }.joined(separator: ", "))
+        let ranked = results.sorted { $0.1 < $1.1 }.map(\.0)
+        rankedServers = (Date(), ranked)
+        return ranked
+    }
+
     static func kodikURL(_ src: String) -> URL? {
         URL(string: src.hasPrefix("//") ? "https:" + src : src)
     }

@@ -10,8 +10,11 @@ struct ProfileView: View {
         List {
             Section {
                 if auth.isLoggedIn {
-                    HStack {
-                        Image(systemName: "person.crop.circle.fill").font(.largeTitle).foregroundStyle(Theme.accent)
+                    HStack(spacing: 14) {
+                        Text(String((auth.profileName ?? "?").prefix(1)).uppercased())
+                            .font(.system(size: 24, weight: .heavy))
+                            .frame(width: 56, height: 56)
+                            .background(Theme.accentGradient, in: Circle())
                         VStack(alignment: .leading) {
                             Text(auth.profileName ?? "Профиль").font(.headline)
                             Text("Аккаунт Anixart").font(.caption).foregroundStyle(.secondary)
@@ -51,13 +54,14 @@ struct ProfileView: View {
 
             Section("История на устройстве") {
                 if history.entries.isEmpty {
-                    Text("Пока пусто").foregroundStyle(.secondary)
+                    Text("Пока пусто — начните смотреть что-нибудь").foregroundStyle(.secondary)
                 }
                 ForEach(history.entries.prefix(50)) { entry in
                     NavigationLink(value: ReleaseRoute(id: entry.releaseId)) {
                         HStack(spacing: 12) {
-                            PosterImage(url: entry.image.flatMap(URL.init(string:)), cornerRadius: 6)
+                            RemoteImage(url: entry.image.flatMap(URL.init(string:)))
                                 .frame(width: 44, height: 62)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(entry.title).font(.subheadline).lineLimit(1)
                                 Text("\(entry.episodeName) · \(entry.typeName)")
@@ -86,6 +90,8 @@ struct ProfileView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Профиль")
         .releaseDestinations()
         .sheet(isPresented: $showLogin) { LoginView() }

@@ -14,38 +14,70 @@ struct ScheduleView: View {
     private let shortNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("День", selection: $selectedDay) {
-                ForEach(0..<7, id: \.self) { Text(shortNames[$0]).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .padding()
-
-            List {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                dayPicker
                 if isLoading && days.isEmpty {
-                    HStack { Spacer(); ProgressView(); Spacer() }
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
                 } else if let error {
                     ErrorView(message: error) { Task { await load() } }
                 } else if selectedDay < days.count {
                     let day = days[selectedDay]
-                    Section(day.name) {
-                        if day.releases.isEmpty {
-                            Text("В этот день ничего не выходит").foregroundStyle(.secondary)
-                        }
+                    HStack {
+                        Text(day.name).font(.title3.bold())
+                        if selectedDay == Self.todayIndex { Pill(text: "Сегодня", filled: true) }
+                        Spacer()
+                        Text("\(day.releases.count) тайтлов").font(.subheadline).foregroundStyle(Theme.secondaryText)
+                    }
+                    if day.releases.isEmpty {
+                        EmptyStateView(icon: "moon.zzz", text: "В этот день ничего не выходит")
+                    }
+                    LazyVStack(spacing: 10) {
                         ForEach(day.releases) { release in
                             NavigationLink(value: ReleaseRoute(id: release.id)) {
-                                ReleaseRow(release: release)
+                                ReleaseRow(release: release, trailing: nextEpisode(release))
                             }
+                            .buttonStyle(PressableStyle())
                         }
                     }
                 }
             }
-            .listStyle(.plain)
+            .padding()
         }
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Расписание")
         .releaseDestinations()
         .refreshable { await load() }
         .task { if days.isEmpty { await load() } }
+    }
+
+    private var dayPicker: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<7, id: \.self) { i in
+                Button {
+                    withAnimation(.spring(response: 0.3)) { selectedDay = i }
+                } label: {
+                    VStack(spacing: 4) {
+                        Text(shortNames[i]).font(.system(size: 14, weight: .bold))
+                        Circle()
+                            .fill(i == Self.todayIndex ? Theme.accent : .clear)
+                            .frame(width: 5, height: 5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(i == selectedDay ? AnyShapeStyle(Theme.accentGradient) : AnyShapeStyle(Theme.card),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func nextEpisode(_ r: Release) -> String? {
+        guard let released = r.episodesReleased else { return nil }
+        if let total = r.episodesTotal, released >= total { return nil }
+        return "\(released + 1) эп."
     }
 
     private func load() async {

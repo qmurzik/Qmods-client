@@ -66,3 +66,43 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: AnixQ.ipa
+
+  screenshots:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+      - name: Generate project
+        run: brew install xcodegen && xcodegen generate
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild -project AnixQ.xcodeproj -target AnixQ -configuration Debug \
+            -sdk iphonesimulator -arch arm64 SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO build \
+            | grep -E "error:|BUILD" || true
+          test -d build/Debug-iphonesimulator/AnixQ.app
+      - name: Run and capture screenshots
+        run: |
+          DEVICE=$(xcrun simctl list devices available | grep -E "iPhone 1[5-6] Pro \(" | head -1 | grep -oE "[0-9A-F-]{36}")
+          echo "Device: $DEVICE"
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build/Debug-iphonesimulator/AnixQ.app
+          mkdir -p shots
+          shot() { # name, args...
+            name=$1; shift
+            xcrun simctl terminate "$DEVICE" ru.qmods.anixq 2>/dev/null || true
+            xcrun simctl launch "$DEVICE" ru.qmods.anixq "$@"
+            sleep 20
+            xcrun simctl io "$DEVICE" screenshot "shots/$name.png"
+          }
+          shot home
+          shot catalog -screenshotTab 1
+          shot search -screenshotTab 2
+          shot schedule -screenshotTab 3
+          shot release -screenshotRelease 20024
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots

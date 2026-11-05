@@ -72,7 +72,12 @@ struct PlayerScreen: View {
             scheduleHide()
         }
         .onDisappear {
-            c.stop()
+            // Picture-in-Picture keeps playing after the player screen is closed.
+            if let pip, pip.isPictureInPictureActive {
+                PiPKeeper.shared.keep(c, pip: pip)
+            } else {
+                c.stop()
+            }
             OrientationController.set(.portrait)
         }
         .onChange(of: c.isPlaying) { playing in if playing { scheduleHide() } }
@@ -843,5 +848,28 @@ struct KodikWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
+    }
+}
+
+
+/// Holds the playback controller alive while Picture-in-Picture runs without the player screen.
+final class PiPKeeper: NSObject, AVPictureInPictureControllerDelegate {
+    static let shared = PiPKeeper()
+    private var controller: PlayerController?
+
+    func keep(_ c: PlayerController, pip: AVPictureInPictureController) {
+        controller = c
+        pip.delegate = self
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ pip: AVPictureInPictureController) {
+        let c = controller
+        controller = nil
+        Task { @MainActor in c?.stop() }
+    }
+
+    func pictureInPictureController(_ pip: AVPictureInPictureController,
+                                    restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completion: @escaping (Bool) -> Void) {
+        completion(true)
     }
 }

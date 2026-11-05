@@ -6,7 +6,7 @@
   "sourceLinkTitle": "GitHub",
   "sourceLinkUrl": "https://github.com/qmurzik/Qmods-client",
   "sourceImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-  "sourceUpdateTime": "2026-11-05T10:57:49+0000",
+  "sourceUpdateTime": "2026-11-05T11:06:05+0000",
   "sourceDescription": "AnixQ — аниме с AnimeLib: каталог, плеер без рекламы, синхронизация с Shikimori.",
   "appCategories": [
     "Приложения"
@@ -15,13 +15,13 @@
     {
       "appType": "SELF_SIGN",
       "appCateIndex": 0,
-      "appUpdateTime": "2026-11-05T10:57:49+0000",
+      "appUpdateTime": "2026-11-05T11:06:05+0000",
       "appName": "AnixQ",
-      "appVersion": "1.0.36",
+      "appVersion": "1.0.37",
       "appImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.36/AnixQ.ipa",
-      "appSize": 2106794,
-      "appDescription": "Share extension, character pages, quick actions, smart continue, dub alerts\n\n- 'Что за аниме?' share extension: share any image from TikTok, Photos or\n  Telegram; characters are recognised (AnimeTrace), the title found on\n  Shikimori and opened in AnixQ or added to Запланировано\n- Character and person pages (Shikimori): description, seiyu / voiced\n  characters, their anime linking back into AnimeLib; staff and characters\n  on the title page are tappable\n- Long-press quick actions on every poster (Смотрю / В планы / Любимые /\n  Просмотрено, share); 'Хочу посмотреть' in frame search results\n- Smart continue: finished episodes offer the next one; 'Продолжение\n  франшиз' shelf with the next main entry of finished titles\n- Notification when the newest episode appears with the user's own dub team;\n  background refresh via BGTaskScheduler\n- Fix: frame search screen failed to compile (missing brace)"
+      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.37/AnixQ.ipa",
+      "appSize": 2106851,
+      "appDescription": "Fix navigation: titles opened from bookmark folders landed under the folder\n\nThe Library tab mixed destination-based NavigationLinks (folders, stats,\ndownloads) with value-based title links; SwiftUI then pushed the title on the\nwrong level, leaving the folder on top and the title behind 'Назад'. All\nLibrary links are now value-based (LibraryRoute), and frame search uses a\nnavigation path instead of an isPresented destination."
     }
   ]
 }

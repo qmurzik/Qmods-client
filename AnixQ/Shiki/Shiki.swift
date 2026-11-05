@@ -109,6 +109,18 @@ struct ShikiVideo: Identifiable, Hashable {
     }
 }
 
+struct FranchiseNode: Identifiable, Hashable {
+    let shikiId: Int
+    let name: String
+    let kind: String?
+    let year: Int?
+    let date: Date
+    /// Shikimori's importance: main seasons/films are heavy, recaps/shorts are light.
+    let weight: Int
+    var id: Int { shikiId }
+    var isMain: Bool { weight >= 3 || ["TV Сериал", "Фильм"].contains(kind ?? "") }
+}
+
 struct ShikiAnimeInfo {
     let score: Double?
     let episodes: Int?
@@ -221,6 +233,17 @@ enum ShikiAPI {
         return ShikiAnimeInfo(score: x.double("score"), episodes: x.int("episodes"),
                               episodesAired: x.int("episodes_aired"),
                               nextEpisodeAt: parseDate(x.str("next_episode_at")), status: x.str("status"))
+    }
+
+    /// The whole franchise in release order (Shikimori keeps franchises curated, no crossovers).
+    static func franchise(_ id: Int) async -> [FranchiseNode] {
+        guard let json = try? await request("/api/animes/\(id)/franchise", auth: false) as? JSON else { return [] }
+        return json.arr("nodes").compactMap { n -> FranchiseNode? in
+            guard let sid = n.int("id"), let ts = n.double("date") else { return nil }
+            return FranchiseNode(shikiId: sid, name: n.str("name") ?? "", kind: n.str("kind"), year: n.int("year"),
+                                 date: Date(timeIntervalSince1970: ts), weight: n.int("weight") ?? 1)
+        }
+        .sorted { $0.date < $1.date }
     }
 
     static func videos(_ id: Int) async -> [ShikiVideo] {

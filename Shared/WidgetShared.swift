@@ -17,6 +17,9 @@ enum WidgetShared {
         var continueItems: [ContinueItem]
         var watchingShikiIds: [Int]
         var updated: Date
+        /// shikiId -> AnimeLib cover / slug for titles the user follows (covers in "Скоро выходит").
+        var covers: [Int: String]? = nil
+        var slugs: [Int: String]? = nil
     }
 
     static var fileURL: URL? {

@@ -81,8 +81,13 @@ final class LibraryStore: ObservableObject {
             WidgetShared.ContinueItem(title: $0.title.title, slug: $0.title.slugURL, episode: $0.episodeNumber,
                                       team: $0.teamName, progress: $0.progress, cover: $0.title.cover)
         }
-        let ids = watchingTitles.compactMap(\.shikiId) + history.prefix(20).compactMap(\.title.shikiId)
-        WidgetShared.write(.init(continueItems: Array(items), watchingShikiIds: Array(Set(ids)), updated: Date()))
+        let followed = watchingTitles + history.prefix(30).map(\.title)
+        let ids = followed.compactMap(\.shikiId)
+        var covers: [Int: String] = [:]
+        var slugs: [Int: String] = [:]
+        for t in followed { if let sid = t.shikiId { covers[sid] = t.coverThumb ?? t.cover; slugs[sid] = t.slugURL } }
+        WidgetShared.write(.init(continueItems: Array(items), watchingShikiIds: Array(Set(ids)), updated: Date(),
+                                 covers: covers, slugs: slugs))
         WidgetCenter.shared.reloadAllTimelines()
         reindexSpotlightIfNeeded()
     }

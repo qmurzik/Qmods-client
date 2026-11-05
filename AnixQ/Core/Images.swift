@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import ImageIO
 
 /// Image loader used instead of `AsyncImage`.
 ///
@@ -66,6 +67,21 @@ actor ImagePipeline {
         return list
     }
 
+    /// Decodes straight to a bitmap no larger than needed on screen (backgrounds are 1920 px wide);
+    /// much faster and lighter than decoding full size.
+    private static func downsample(_ data: Data, maxPixels: Int = 1400) -> UIImage? {
+        let opts = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let src = CGImageSourceCreateWithData(data as CFData, opts) else { return UIImage(data: data) }
+        let thumbOpts = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels
+        ] as CFDictionary
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOpts) else { return UIImage(data: data) }
+        return UIImage(cgImage: cg)
+    }
+
     private static func fetch(_ url: URL) async -> UIImage? {
         for candidate in candidates(for: url) {
             for attempt in 0..<2 {
@@ -78,8 +94,8 @@ actor ImagePipeline {
                     let (data, response) = try await session.data(for: req)
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 200
                     if status == 404 { break }
-                    guard (200..<300).contains(status), let image = UIImage(data: data) else { continue }
-                    return await image.byPreparingForDisplay() ?? image
+                    guard (200..<300).contains(status), let image = downsample(data) else { continue }
+                    return image
                 } catch {
                     if attempt == 0 { try? await Task.sleep(nanoseconds: 400_000_000) }
                 }

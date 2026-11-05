@@ -25,7 +25,7 @@ final class TitleModel: ObservableObject {
     @Published var shiki: ShikiAnimeInfo?
     @Published var characters: [ShikiPerson] = []
     @Published var videos: [ShikiVideo] = []
-    @Published var franchise: [(title: Title, date: String)] = []
+    @Published var franchise: [FranchiseNode] = []
     @Published var franchiseLoading = false
     @Published var staff: [ShikiPerson] = []
     @Published var loadingEpisodes = true
@@ -65,6 +65,12 @@ final class TitleModel: ObservableObject {
         if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < 600, !episodes.isEmpty { return }
         error = nil
         let slug = title.slugURL
+        // Paint instantly from the last visit, then refresh from the network.
+        if detail == nil { detail = LibAPI.cachedDetail(slug) }
+        if episodes.isEmpty {
+            let cached = LibAPI.cachedEpisodes(slug)
+            if !cached.isEmpty { episodes = cached }
+        }
         let header = Task { [weak self] in
             let d = try? await LibAPI.detail(slug)
             await MainActor.run { if let d { self?.detail = d } }
@@ -87,11 +93,13 @@ final class TitleModel: ObservableObject {
         let info = Task { try? await ShikiAPI.anime(sid) }
         let roles = Task { await ShikiAPI.roles(sid) }
         let vids = Task { await ShikiAPI.videos(sid) }
+        let fr = Task { [weak self] in await self?.loadFranchise(shikiId: sid) }
         shiki = await info.value
         let r = await roles.value
         characters = r.characters
         staff = r.staff
         videos = await vids.value
+        await fr.value
     }
 
     func loadEpisodes(lastTeamId: Int?) async {
@@ -127,10 +135,11 @@ final class TitleModel: ObservableObject {
         }
     }
 
-    func loadFranchise() async {
+    func loadFranchise(shikiId: Int) async {
         guard franchise.isEmpty, !franchiseLoading else { return }
         franchiseLoading = true
-        franchise = await LibAPI.franchise(title)
+        let nodes = await ShikiAPI.franchise(shikiId)
+        franchise = nodes.count > 1 ? nodes : []
         franchiseLoading = false
     }
 
@@ -154,6 +163,8 @@ struct TitleView: View {
     @State private var play: PlayRequest?
     @State private var expanded = false
     @State private var showAllEpisodes = false
+    @State private var showFullFranchise = false
+    @State private var scrolledPastHeader = false
 
     init(title: Title) {
         _model = StateObject(wrappedValue: TitleModel.shared(for: title))
@@ -182,9 +193,15 @@ struct TitleView: View {
             }
             .padding(.bottom, 30)
         }
+        .coordinateSpace(name: "titleScroll")
+        .onPreferenceChange(HeaderOffsetKey.self) { y in
+            let past = y < -(Layout.headerHeight - 140)
+            if past != scrolledPastHeader { withAnimation(.easeInOut(duration: 0.2)) { scrolledPastHeader = past } }
+        }
         .ignoresSafeArea(edges: .top)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationTitle(scrolledPastHeader ? t.title : "")
+        .toolbarBackground(scrolledPastHeader ? .visible : .hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 ShareLink(item: URL(string: "https://anilib.me/ru/anime/\(t.slugURL)")!) {
@@ -235,6 +252,9 @@ struct TitleView: View {
             .padding(.bottom, 8)
         }
         .frame(height: Layout.headerHeight)
+        .background(GeometryReader { g in
+            Color.clear.preference(key: HeaderOffsetKey.self, value: g.frame(in: .named("titleScroll")).minY)
+        })
     }
 
     private var metaLine: String {
@@ -519,47 +539,26 @@ struct TitleView: View {
 
     @ViewBuilder
     private var franchiseSection: some View {
-        if !model.related.isEmpty {
+        if !model.franchise.isEmpty {
+            let main = model.franchise.filter(\.isMain)
+            let visible = showFullFranchise || main.count < 2 ? model.franchise : main
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(title: "Порядок просмотра") {
-                    if model.franchiseLoading { ProgressView() }
-                }
-                if model.franchise.isEmpty && !model.franchiseLoading {
-                    Button {
-                        Task { await model.loadFranchise() }
-                    } label: {
-                        Label("Показать всю франшизу по порядку", systemImage: "list.number")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .padding(.horizontal)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(model.franchise.enumerated()), id: \.element.title.id) { i, item in
-                            NavigationLink(value: item.title) {
-                                HStack(spacing: 12) {
-                                    Text("\(i + 1)").font(.headline.monospacedDigit()).frame(width: 26)
-                                        .foregroundStyle(item.title.id == t.id ? Theme.accent : .secondary)
-                                    PosterImage(url: item.title.thumbURL, radius: 6).frame(width: 40)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.title.title).font(.subheadline.weight(item.title.id == t.id ? .bold : .regular))
-                                            .lineLimit(2).foregroundStyle(.primary)
-                                        Text([item.title.typeLabel, String(item.date.prefix(4))].compactMap { $0 }
-                                            .filter { $0 != "9999" }.joined(separator: " · "))
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    franchiseMark(item.title)
-                                }
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 12)
-                            }
-                            .buttonStyle(.plain)
-                            if i < model.franchise.count - 1 { Divider().padding(.leading, 50) }
+                    if model.franchise.count > main.count && main.count >= 2 {
+                        Button(showFullFranchise ? "Только основное" : "Все \(model.franchise.count)") {
+                            withAnimation { showFullFranchise.toggle() }
                         }
+                        .font(.subheadline)
                     }
-                    .cardStyle()
-                    .padding(.horizontal)
                 }
+                VStack(spacing: 0) {
+                    ForEach(Array(visible.enumerated()), id: \.element.id) { i, node in
+                        FranchiseRow(index: i + 1, node: node, isCurrent: node.shikiId == t.shikiId)
+                        if i < visible.count - 1 { Divider().padding(.leading, 90) }
+                    }
+                }
+                .cardStyle()
+                .padding(.horizontal)
             }
         }
     }
@@ -707,4 +706,75 @@ struct EpisodeCard: View {
         }
         .frame(width: 200, alignment: .leading)
     }
+}
+
+
+/// One franchise entry from Shikimori; the AnimeLib title is looked up lazily (and cached).
+struct FranchiseRow: View {
+    let index: Int
+    let node: FranchiseNode
+    let isCurrent: Bool
+    @EnvironmentObject private var library: LibraryStore
+    @State private var title: Title?
+    @State private var missing = false
+
+    var body: some View {
+        Group {
+            if let title, !isCurrent {
+                NavigationLink(value: title) { content }.buttonStyle(.plain)
+            } else {
+                content
+            }
+        }
+        .task {
+            title = LibAPI.cachedTitle(shikiId: node.shikiId)
+            if title == nil {
+                title = await LibAPI.title(shikiId: node.shikiId, names: [node.name])
+                missing = title == nil
+            }
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: 12) {
+            Text("\(index)").font(.headline.monospacedDigit()).frame(width: 26)
+                .foregroundStyle(isCurrent ? Theme.accent : .secondary)
+            PosterImage(url: title?.thumbURL, radius: 6).frame(width: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title?.title ?? node.name)
+                    .font(.subheadline.weight(isCurrent ? .bold : .regular))
+                    .lineLimit(2).foregroundStyle(missing ? .secondary : .primary)
+                Text([node.kind, node.year.map(String.init), missing ? "нет на AnimeLib" : nil]
+                    .compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            if let title { mark(title) }
+            if !isCurrent && title != nil {
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .contentShape(Rectangle())
+        .background(isCurrent ? Theme.accent.opacity(0.1) : .clear)
+    }
+
+    @ViewBuilder
+    private func mark(_ title: Title) -> some View {
+        let status = library.bookmark(for: title.slugURL)
+        if status == .completed {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        } else if status == .watching || library.lastEntry(titleId: title.id) != nil {
+            Image(systemName: "play.circle.fill").foregroundStyle(Theme.accent)
+        } else if status == .planned {
+            Image(systemName: "calendar").foregroundStyle(.secondary)
+        }
+    }
+}
+
+
+private struct HeaderOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

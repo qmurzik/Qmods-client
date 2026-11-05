@@ -62,6 +62,9 @@ enum LibAPI {
     @discardableResult
     static func request(_ path: String, query: [URLQueryItem] = [], auth: Bool = true,
                         method: String = "GET", body: Any? = nil) async throws -> Any {
+        let cacheable = method == "GET" && !path.hasPrefix("/bookmarks") && !path.hasPrefix("/auth")
+        let cacheKey = cacheable ? ResponseCache.key(path, query) : nil
+        if let cacheKey, let hit = ResponseCache.memory(cacheKey) { return hit }
         var lastError: Error = LibError.notFound
         let bodyData = try body.map { try JSONSerialization.data(withJSONObject: $0) }
         for host in hosts {
@@ -103,7 +106,9 @@ enum LibAPI {
                     lastError = LibError.badStatus(status)
                     continue
                 }
-                return try JSONSerialization.jsonObject(with: data)
+                let json = try JSONSerialization.jsonObject(with: data)
+                if let cacheKey { ResponseCache.store(cacheKey, json: json, data: data, path: path) }
+                return json
             } catch let e as LibError {
                 throw e
             } catch {
@@ -160,6 +165,23 @@ enum LibAPI {
         let json = try await request("/anime/\(slug)", query: q)
         guard let d = data(json) as? JSON, let detail = TitleDetail(json: d) else { throw LibError.notFound }
         return detail
+    }
+
+    /// Instant, possibly stale data from disk for the title page.
+    static func cachedDetail(_ slug: String) -> TitleDetail? {
+        let q = detailFields.map { URLQueryItem(name: "fields[]", value: $0) }
+        guard let d = (ResponseCache.disk("/anime/\(slug)", q) as? JSON)?.obj("data") else { return nil }
+        return TitleDetail(json: d)
+    }
+
+    static func cachedEpisodes(_ slug: String) -> [LibEpisode] {
+        let q = [URLQueryItem(name: "anime_id", value: slug)]
+        let items = (ResponseCache.disk("/episodes", q) as? JSON)?["data"] as? [JSON] ?? []
+        return items.enumerated().compactMap { i, x in
+            guard let id = x.int("id") else { return nil }
+            return LibEpisode(id: id, number: x.str("number") ?? String(i + 1), season: x.str("season"),
+                              name: x.str("name"), index: i)
+        }
     }
 
     static func background(_ slug: String) async -> URL? {
@@ -275,7 +297,10 @@ enum LibAPI {
     @MainActor private static var playerCache: [Int: (Date, [LibPlayer])] = [:]
 
     /// Player lists differ for guests and signed-in users, so they are dropped on login/logout.
-    @MainActor static func clearCache() { playerCache = [:] }
+    @MainActor static func clearCache() {
+        playerCache = [:]
+        ResponseCache.invalidate()
+    }
 
     @MainActor
     static func players(episodeId: Int) async throws -> [LibPlayer] {
@@ -469,5 +494,56 @@ enum LibAPI {
 
     static func removeBookmark(id: Int) async throws {
         try await request("/bookmarks/\(id)", method: "DELETE")
+    }
+}
+
+
+/// Short-lived memory cache for GET responses plus an on-disk copy of title data (detail,
+/// episodes, relations), used to paint screens instantly before the network answers.
+enum ResponseCache {
+    private static let lock = NSLock()
+    private static var mem: [String: (Date, Any)] = [:]
+    private static let ttl: TimeInterval = 5 * 60
+    private static let dir: URL = {
+        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("api")
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }()
+
+    static func key(_ path: String, _ query: [URLQueryItem]) -> String {
+        path + "?" + query.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")
+            + (LibSession.isLoggedIn ? "#u" : "")
+    }
+
+    static func memory(_ key: String) -> Any? {
+        lock.lock(); defer { lock.unlock() }
+        guard let (date, json) = mem[key], Date().timeIntervalSince(date) < ttl else { return nil }
+        return json
+    }
+
+    static func store(_ key: String, json: Any, data: Data, path: String) {
+        lock.lock()
+        mem[key] = (Date(), json)
+        if mem.count > 300 { mem = mem.filter { Date().timeIntervalSince($0.value.0) < ttl } }
+        lock.unlock()
+        // Persist only title-level data; catalog pages change too often to be worth it.
+        guard path.hasPrefix("/anime/") || path.hasPrefix("/episodes") else { return }
+        try? data.write(to: file(key), options: .atomic)
+    }
+
+    /// Last known response from disk (any age).
+    static func disk(_ path: String, _ query: [URLQueryItem] = []) -> Any? {
+        guard let data = try? Data(contentsOf: file(key(path, query))) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    static func invalidate() {
+        lock.lock(); mem = [:]; lock.unlock()
+    }
+
+    private static func file(_ key: String) -> URL {
+        var h: UInt64 = 1469598103934665603
+        for b in key.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
+        return dir.appendingPathComponent(String(h, radix: 36) + ".json")
     }
 }

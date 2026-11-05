@@ -6,7 +6,7 @@
   "sourceLinkTitle": "GitHub",
   "sourceLinkUrl": "https://github.com/qmurzik/Qmods-client",
   "sourceImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-  "sourceUpdateTime": "2026-11-05T08:55:18+0000",
+  "sourceUpdateTime": "2026-11-05T10:17:33+0000",
   "sourceDescription": "AnixQ — аниме с AnimeLib: каталог, плеер без рекламы, синхронизация с Shikimori.",
   "appCategories": [
     "Приложения"
@@ -15,13 +15,13 @@
     {
       "appType": "SELF_SIGN",
       "appCateIndex": 0,
-      "appUpdateTime": "2026-11-05T08:55:18+0000",
+      "appUpdateTime": "2026-11-05T10:17:33+0000",
       "appName": "AnixQ",
-      "appVersion": "1.0.30",
+      "appVersion": "1.0.31",
       "appImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.30/AnixQ.ipa",
-      "appSize": 1883274,
-      "appDescription": "Correct watch order, sticky nav bar, faster loading, redesigned widgets\n\n- Watch order now comes from the curated Shikimori franchise (sorted by\n  release date, no crossovers); main entries first, specials on demand;\n  each row resolves its AnimeLib title lazily and is cached\n- Title page shows a navigation bar background and title once the header\n  is scrolled away (no more 'Назад' over content)\n- GET responses cached in memory (5 min) and title data on disk: the title\n  page paints instantly from the last visit, then refreshes\n- Images are decoded straight to screen size via ImageIO (big backgrounds\n  no longer stall scrolling)\n- Widgets redesigned: poster-based Continue (small/medium with recent list),\n  Upcoming with covers of your titles and time chips, plus lock screen\n  widgets (rectangular / circular); refresh right after the next episode"
+      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.31/AnixQ.ipa",
+      "appSize": 1904486,
+      "appDescription": "Search by screenshot: reliable AnimeLib matching and clearer results\n\ntrace.moe recognised frames fine; titles were lost when matching to\nAnimeLib because many entries lack an AniList id. Matching now tries the\nAniList id, then the MAL id (equal to the Shikimori id AnimeLib stores),\nthen an exact title match. Results are grouped per anime with the AniList\ncover, the best match shown as a card with the frame, episode and moment,\na warning for low-confidence matches, and steps logged to Diagnostics."
     }
   ]
 }

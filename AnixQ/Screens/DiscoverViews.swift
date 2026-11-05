@@ -8,11 +8,17 @@ import UniformTypeIdentifiers
 struct TraceResult: Identifiable, Hashable {
     let id = UUID()
     let anilistId: Int
+    let malId: Int?
     let names: [String]
+    let cover: URL?
     let episode: String?
     let from: Double
     let similarity: Double
     let image: URL?
+    /// Other matching moments of the same title (trace.moe returns several per anime).
+    var moments = 1
+
+    var title: String { names.first ?? "?" }
 }
 
 enum TraceMoe {
@@ -25,29 +31,54 @@ enum TraceMoe {
         let (body, response) = try await URLSession.shared.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
+            DebugLog.log("trace: HTTP \(status) \(String(data: body.prefix(200), encoding: .utf8) ?? "")")
             if status == 402 || status == 429 { throw LibError.server("Лимит поиска trace.moe исчерпан, попробуйте позже") }
             throw LibError.badStatus(status)
         }
         let json = try JSONSerialization.jsonObject(with: body) as? JSON ?? [:]
-        var seen = Set<String>()
-        return json.arr("result").compactMap { r -> TraceResult? in
-            guard let a = r.obj("anilist"), let id = a.int("id") else { return nil }
+        if let err = json.str("error") { throw LibError.server("trace.moe: \(err)") }
+        // Group by anime: keep the best moment per title, count the rest.
+        var byAnime: [Int: TraceResult] = [:]
+        var order: [Int] = []
+        for r in json.arr("result") {
+            guard let a = r.obj("anilist"), let id = a.int("id") else { continue }
+            if var existing = byAnime[id] {
+                existing.moments += 1
+                byAnime[id] = existing
+                continue
+            }
             let t = a.obj("title") ?? [:]
-            let ep = r.str("episode")
-            guard seen.insert("\(id)-\(ep ?? "")").inserted else { return nil }
             let names = [t.str("romaji"), t.str("english"), t.str("native")].compactMap { $0 }
                 + (a["synonyms"] as? [String] ?? [])
-            return TraceResult(anilistId: id, names: names, episode: ep, from: r.double("from") ?? 0,
-                               similarity: r.double("similarity") ?? 0, image: r.str("image").flatMap(URL.init(string:)))
+            let cover = a.obj("coverImage").flatMap { $0.str("large") ?? $0.str("medium") }.flatMap(URL.init(string:))
+            byAnime[id] = TraceResult(anilistId: id, malId: a.int("idMal"), names: names, cover: cover,
+                                      episode: r.str("episode"), from: r.double("from") ?? 0,
+                                      similarity: r.double("similarity") ?? 0,
+                                      image: r.str("image").flatMap(URL.init(string:)))
+            order.append(id)
         }
+        let results = order.compactMap { byAnime[$0] }
+        DebugLog.log("trace: " + results.prefix(4).map { "\($0.title) [al \($0.anilistId), mal \($0.malId ?? 0)] \(Int($0.similarity * 100))%" }
+            .joined(separator: "; "))
+        return results
     }
 
-    /// AnimeLib stores AniList ids, so a name search plus id check finds the exact title.
+    /// AnimeLib match: AniList id, then MAL id (= Shikimori id, which AnimeLib fills more often),
+    /// then an exact title match.
     static func resolve(_ r: TraceResult) async -> Title? {
-        for name in r.names.prefix(4) {
-            if let hit = try? await LibAPI.search(name).first(where: { $0.anilistId == r.anilistId }) { return hit }
+        func norm(_ s: String?) -> String { (s ?? "").lowercased().filter { $0.isLetter || $0.isNumber } }
+        let wanted = Set(r.names.map(norm)).subtracting([""])
+        var candidates: [Title] = []
+        for name in r.names.prefix(3) {
+            let found = (try? await LibAPI.search(name)) ?? []
+            if let hit = found.first(where: { $0.anilistId == r.anilistId }) { return hit }
+            if let mal = r.malId, let hit = found.first(where: { $0.shikiId == mal }) { return hit }
+            candidates += found
         }
-        return nil
+        if let mal = r.malId, let hit = await LibAPI.title(shikiId: mal, names: Array(r.names.prefix(2))) { return hit }
+        let byName = candidates.first { [$0.name, $0.engName].contains { wanted.contains(norm($0)) } }
+        if byName == nil { DebugLog.log("trace: no AnimeLib match for \(r.title)") }
+        return byName
     }
 }
 
@@ -67,20 +98,30 @@ struct TraceSearchView: View {
             List {
                 Section {
                     PhotosPicker(selection: $pick, matching: .images) {
-                        Label(image == nil ? "Выбрать скриншот" : "Другой скриншот", systemImage: "photo.on.rectangle")
+                        Label(image == nil ? "Выбрать кадр" : "Другой кадр", systemImage: "photo.on.rectangle")
                     }
                     if let image {
-                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 200)
+                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 } footer: {
-                    Text("Кадр из аниме — найдём тайтл, серию и момент. Поиск через trace.moe.")
+                    Text("Лучше всего работает чистый кадр: без интерфейса плеера, субтитров и рамок. Скриншот с полноэкранного видео подходит.")
                 }
                 if searching { HStack { Spacer(); ProgressView("Ищем…"); Spacer() } }
-                if let error { Text(error).foregroundStyle(.red) }
-                if !results.isEmpty {
-                    Section("Результаты") {
-                        ForEach(results) { r in
+                if let error { Text(error).foregroundStyle(.orange) }
+                if let best = results.first {
+                    Section {
+                        bestCard(best)
+                        if best.similarity < 0.87 {
+                            Label("Совпадение неуверенное. Попробуйте обрезать интерфейс и сделать кадр почётче.",
+                                  systemImage: "exclamationmark.triangle")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                    } header: { Text("Похоже, это") }
+                }
+                if results.count > 1 {
+                    Section("Другие варианты") {
+                        ForEach(results.dropFirst()) { r in
                             Button { Task { await open(r) } } label: { row(r) }
                         }
                     }
@@ -97,12 +138,43 @@ struct TraceSearchView: View {
         }
     }
 
+    private func bestCard(_ r: TraceResult) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Theme.card.frame(width: 80, height: 114).overlay { RemoteImage(url: r.cover) }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(r.title).font(.headline).lineLimit(3)
+                    if r.names.count > 1 { Text(r.names[1]).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    Text([r.episode.map { "Серия \($0)" }, "момент \(time(r.from))"].compactMap { $0 }.joined(separator: " · "))
+                        .font(.subheadline)
+                    Text("Совпадение \(Int(r.similarity * 100))%")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(r.similarity > 0.9 ? .green : .orange)
+                }
+            }
+            if let img = r.image {
+                RemoteImage(url: img).frame(height: 150).clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            Button {
+                Task { await open(r) }
+            } label: {
+                HStack {
+                    if resolving == r.id { ProgressView().tint(.black) } else { Image(systemName: "play.fill") }
+                    Text("Открыть тайтл")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+        }
+        .padding(.vertical, 4)
+    }
+
     private func row(_ r: TraceResult) -> some View {
         HStack(spacing: 12) {
-            Theme.card.frame(width: 96, height: 54).overlay { RemoteImage(url: r.image) }
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            Theme.card.frame(width: 44, height: 62).overlay { RemoteImage(url: r.cover) }
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 3) {
-                Text(r.names.first ?? "?").font(.subheadline.weight(.semibold)).lineLimit(2).foregroundStyle(.primary)
+                Text(r.title).font(.subheadline.weight(.semibold)).lineLimit(2).foregroundStyle(.primary)
                 Text([r.episode.map { "Серия \($0)" }, time(r.from)].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -118,17 +190,22 @@ struct TraceSearchView: View {
 
     private func load(_ item: PhotosPickerItem?) async {
         guard let item, let data = try? await item.loadTransferable(type: Data.self),
-              let img = UIImage(data: data) else { return }
+              let img = UIImage(data: data) else {
+            error = "Не удалось открыть изображение"
+            return
+        }
         image = img
         results = []
         error = nil
         searching = true
         defer { searching = false }
-        // trace.moe limits upload size; a ~1000px JPEG is plenty.
-        let scale = min(1, 1000 / max(img.size.width, img.size.height))
+        // trace.moe limits upload size; ~1280 px JPEG keeps detail without hitting limits.
+        let scale = min(1, 1280 / max(img.size.width, img.size.height))
         let size = CGSize(width: img.size.width * scale, height: img.size.height * scale)
-        let small = UIGraphicsImageRenderer(size: size).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
-        guard let jpeg = small.jpegData(compressionQuality: 0.8) else { return }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
+        guard let jpeg = small.jpegData(compressionQuality: 0.85) else { return }
         do {
             results = try await TraceMoe.search(jpeg)
             if results.isEmpty { error = "Ничего не нашлось" }
@@ -144,7 +221,7 @@ struct TraceSearchView: View {
             opened = t
             showOpened = true
         } else {
-            error = "Этого тайтла нет на AnimeLib"
+            error = "«\(r.title)» не нашёлся на AnimeLib"
         }
     }
 }

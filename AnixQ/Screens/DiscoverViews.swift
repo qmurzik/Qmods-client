@@ -93,6 +93,8 @@ struct TraceSearchView: View {
     @State private var opened: Title?
     @State private var showOpened = false
     @State private var crop = CGRect(x: 0, y: 0, width: 1, height: 1)
+    @State private var characterMatches: [CharacterMatch] = []
+    @State private var recognising = false
     @State private var textMatches: [Title] = []
     @State private var textQueries: [String] = []
     @State private var readingText = false
@@ -127,6 +129,35 @@ struct TraceSearchView: View {
                 }
                 if searching { HStack { Spacer(); ProgressView("Ищем…"); Spacer() } }
                 if let error { Text(error).foregroundStyle(.orange) }
+                if recognising && characterMatches.isEmpty {
+                    HStack { Spacer(); ProgressView("Узнаём персонажей…"); Spacer() }
+                }
+                if !characterMatches.isEmpty {
+                    Section {
+                        ForEach(characterMatches) { m in
+                            if let t = m.title {
+                                NavigationLink(value: t) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        TitleRow(title: t)
+                                        if !m.characters.isEmpty {
+                                            Label(m.characters.prefix(2).joined(separator: ", "), systemImage: "person.fill")
+                                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }
+                                }
+                            } else {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(m.work).font(.subheadline.weight(.semibold))
+                                    Text("Нет на AnimeLib").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Узнали по персонажу")
+                    } footer: {
+                        Text("AnimeTrace узнаёт персонажей — работает и с кадрами из TikTok/Shorts.")
+                    }
+                }
                 if !textMatches.isEmpty {
                     Section {
                         ForEach(textMatches) { t in
@@ -258,6 +289,15 @@ struct TraceSearchView: View {
         error = nil
         defer { searching = false }
         let frame = CropEditor.cropped(image, to: crop)
+        // Character recognition in parallel with scene search.
+        characterMatches = []
+        recognising = true
+        Task {
+            var found = await AnimeTraceAPI.search(frame)
+            for i in found.indices { found[i].title = await AnimeTraceAPI.resolve(found[i]) }
+            characterMatches = found.filter { $0.title != nil } + found.filter { $0.title == nil }.prefix(1)
+            recognising = false
+        }
         guard let jpeg = frame.jpegData(compressionQuality: 0.85) else { return }
         DebugLog.log(String(format: "trace: searching %.0fx%.0f crop %.2f,%.2f %.2fx%.2f", frame.size.width, frame.size.height,
                             crop.minX, crop.minY, crop.width, crop.height))
@@ -271,7 +311,9 @@ struct TraceSearchView: View {
                     results = alt
                 }
             }
-            if results.isEmpty && textMatches.isEmpty { error = "Ничего не нашлось" }
+            if results.isEmpty && textMatches.isEmpty && characterMatches.isEmpty && !recognising {
+                error = "Ничего не нашлось"
+            }
         } catch {
             self.error = error.localizedDescription
         }

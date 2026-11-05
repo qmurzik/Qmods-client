@@ -6,7 +6,7 @@
   "sourceLinkTitle": "GitHub",
   "sourceLinkUrl": "https://github.com/qmurzik/Qmods-client",
   "sourceImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-  "sourceUpdateTime": "2026-11-05T01:07:38+0000",
+  "sourceUpdateTime": "2026-11-05T01:08:49+0000",
   "sourceDescription": "AnixQ — аниме с AnimeLib: каталог, плеер без рекламы, синхронизация с Shikimori.",
   "appCategories": [
     "Приложения"
@@ -15,13 +15,13 @@
     {
       "appType": "SELF_SIGN",
       "appCateIndex": 0,
-      "appUpdateTime": "2026-11-05T01:07:38+0000",
+      "appUpdateTime": "2026-11-05T01:08:49+0000",
       "appName": "AnixQ",
-      "appVersion": "1.0.28",
+      "appVersion": "1.0.29",
       "appImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.28/AnixQ.ipa",
-      "appSize": 1822255,
-      "appDescription": "Polish: faster title/home, less background load, Kodik history, offline banner\n\n- Title page fills each block as soon as it arrives, Shikimori data in\n  parallel, recent titles cached in memory, retry and pull-to-refresh\n- Home shows the last snapshot instantly and refreshes at most every 15 min\n- App foreground work throttled: bookmark sync 10 min, Shikimori import and\n  notification rescheduling 6 h (manual refresh still immediate)\n- Spotlight re-indexes only when the set of titles changes; playback\n  positions capped at the 3000 most recent\n- Bookmark order is stable across syncs\n- Kodik episodes are recorded in history and marked watched when moving on\n- Offline banner with a shortcut to downloads; light haptics"
+      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.29/AnixQ.ipa",
+      "appSize": 1825291,
+      "appDescription": "Keep playback alive in Picture-in-Picture after closing the player"
     }
   ]
 }

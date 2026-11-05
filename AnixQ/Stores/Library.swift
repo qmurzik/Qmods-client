@@ -84,6 +84,18 @@ final class LibraryStore: ObservableObject {
         let ids = watchingTitles.compactMap(\.shikiId) + history.prefix(20).compactMap(\.title.shikiId)
         WidgetShared.write(.init(continueItems: Array(items), watchingShikiIds: Array(Set(ids)), updated: Date()))
         WidgetCenter.shared.reloadAllTimelines()
+        reindexSpotlightIfNeeded()
+    }
+
+    private var spotlightSignature = 0
+
+    /// Re-index system search only when the set of titles actually changed.
+    private func reindexSpotlightIfNeeded() {
+        var hasher = Hasher()
+        for id in Set(bookmarks.values.map(\.title.id)).union(history.map(\.title.id)).sorted() { hasher.combine(id) }
+        let sig = hasher.finalize()
+        guard sig != spotlightSignature else { return }
+        spotlightSignature = sig
         SpotlightIndexer.update(bookmarks.values.map(\.title) + history.map(\.title))
     }
 
@@ -105,12 +117,31 @@ final class LibraryStore: ObservableObject {
     func updateProgress(title: Title, episode: LibEpisode, team: LibTeam, position: Double, duration: Double) {
         guard position.isFinite, duration.isFinite, duration > 0 else { return }
         positions[episode.id] = PlaybackPosition(position: position, duration: duration, date: Date())
+        if positions.count > 3500 {
+            // Keep the 3000 most recent positions.
+            let keep = positions.sorted { $0.value.date > $1.value.date }.prefix(3000)
+            positions = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+        }
         let entry = WatchEntry(title: title, episodeId: episode.id, episodeNumber: episode.number,
                                episodeName: episode.displayTitle, teamId: team.id, teamName: team.name,
                                position: position, duration: duration, date: Date())
         history.removeAll { $0.title.id == title.id }
         history.insert(entry, at: 0)
         if history.count > 300 { history.removeLast(history.count - 300) }
+        save()
+    }
+
+    /// Records that an episode was opened without a known position (Kodik web player), so it shows
+    /// up in "Продолжить просмотр".
+    func touch(title: Title, episode: LibEpisode, team: LibTeam) {
+        let previous = lastEntry(titleId: title.id)
+        let entry = WatchEntry(title: title, episodeId: episode.id, episodeNumber: episode.number,
+                               episodeName: episode.displayTitle, teamId: team.id, teamName: team.name,
+                               position: previous?.episodeId == episode.id ? previous?.position ?? 0 : 0,
+                               duration: previous?.episodeId == episode.id ? previous?.duration ?? 0 : 0,
+                               date: Date())
+        history.removeAll { $0.title.id == title.id }
+        history.insert(entry, at: 0)
         save()
     }
 
@@ -190,6 +221,7 @@ final class LibraryStore: ObservableObject {
     var watchingTitles: [Title] { titles(in: .watching) + titles(in: .rewatching) }
 
     func setBookmark(title: Title, status: BookmarkStatus?) {
+        Haptics.tap()
         let previous = bookmarks[title.slugURL]
         if let status {
             bookmarks[title.slugURL] = LocalBookmark(title: title, status: status, remoteId: previous?.remoteId, date: Date())
@@ -217,8 +249,13 @@ final class LibraryStore: ObservableObject {
     /// Pulls the user's Shikimori list: every title is matched to AnimeLib (cached), put into the
     /// matching folder (unless the user already has an AnimeLib bookmark for it) and its watched
     /// episodes are marked. Nothing is pushed back, so this is safe to run repeatedly.
-    func importShikimori() async {
+    private var lastShikiImport = Date.distantPast
+    private var lastBookmarkSync = Date.distantPast
+
+    func importShikimori(force: Bool = false) async {
         guard ShikiSession.isLoggedIn, shikiImport == nil else { return }
+        guard force || Date().timeIntervalSince(lastShikiImport) > 6 * 3600 else { return }
+        lastShikiImport = Date()
         let rates: [ShikiAPI.RemoteRate]
         do {
             rates = try await ShikiAPI.animeRates()
@@ -260,8 +297,10 @@ final class LibraryStore: ObservableObject {
     }
 
     /// Pulls every bookmark folder from AnimeLib; remote state wins.
-    func syncBookmarks() async {
+    func syncBookmarks(force: Bool = false) async {
         guard LibSession.isLoggedIn, !isSyncing else { return }
+        guard force || Date().timeIntervalSince(lastBookmarkSync) > 10 * 60 else { return }
+        lastBookmarkSync = Date()
         isSyncing = true
         defer { isSyncing = false }
         if LibSession.userId == nil { await LibAPI.loadProfile() }
@@ -271,9 +310,12 @@ final class LibraryStore: ObservableObject {
                 var page = 1
                 while page <= 20 {
                     let items = try await LibAPI.bookmarks(status, page: page)
-                    for item in items {
+                    for (i, item) in items.enumerated() {
+                        // Keep the local date so folder order is stable; new ones follow server order.
+                        let date = bookmarks[item.title.slugURL]?.date
+                            ?? Date().addingTimeInterval(-Double((page - 1) * 100 + i))
                         remote[item.title.slugURL] = LocalBookmark(title: item.title, status: status,
-                                                                   remoteId: item.bookmarkId, date: Date())
+                                                                   remoteId: item.bookmarkId, date: date)
                     }
                     if items.count < 20 { break }
                     page += 1

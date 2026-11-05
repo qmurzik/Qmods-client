@@ -144,6 +144,7 @@ final class DownloadManager: NSObject, ObservableObject {
     func download(title: Title, episode: LibEpisode, team: LibTeam) {
         let key = DownloadItem.key(episodeId: episode.id, teamId: team.id)
         if let existing = items[key], existing.state == .done || existing.state == .downloading { return }
+        Haptics.tap()
         items[key] = DownloadItem(title: title, episode: episode, team: team, quality: "", state: .queued,
                                   progress: 0, bytes: 0, fileName: nil, error: nil, date: Date())
         persist()

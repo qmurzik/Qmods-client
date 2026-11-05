@@ -51,6 +51,7 @@ struct RootView: View {
 
     @State private var deepLink: DeepLink?
     @EnvironmentObject private var library: LibraryStore
+    @ObservedObject private var network = NetworkMonitor.shared
 
     /// Actions requested by Siri / Shortcuts while the app was closed.
     private func handlePendingAction() {
@@ -73,6 +74,20 @@ struct RootView: View {
                         tab = .schedule
                     }
                 }
+                .overlay(alignment: .bottom) {
+                    if !network.isOnline {
+                        Button { tab = .library } label: {
+                            Label("Нет подключения · смотрите загрузки", systemImage: "wifi.slash")
+                                .font(.footnote.weight(.semibold))
+                                .padding(.horizontal, 14).padding(.vertical, 9)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.bottom, 58)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .animation(.spring(response: 0.35), value: network.isOnline)
                 .onReceive(NotificationCenter.default.publisher(for: .anixqPendingAction)) { _ in handlePendingAction() }
                 .onAppear { handlePendingAction() }
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in

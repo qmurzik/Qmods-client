@@ -419,7 +419,11 @@ enum EpisodeNotifier {
         return granted
     }
 
-    static func reschedule(titles: [Title]) async {
+    private static var lastRun = Date.distantPast
+
+    static func reschedule(titles: [Title], force: Bool = false) async {
+        guard force || Date().timeIntervalSince(lastRun) > 6 * 3600 else { return }
+        lastRun = Date()
         let center = UNUserNotificationCenter.current()
         guard isEnabled else {
             center.removeAllPendingNotificationRequests()

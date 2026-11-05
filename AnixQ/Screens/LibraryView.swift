@@ -108,12 +108,12 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showLibLogin) {
-            LibLoginView { ok in if ok { Task { await library.syncBookmarks() } } }
+            LibLoginView { ok in if ok { Task { await library.syncBookmarks(force: true) } } }
         }
         .appDestinations()
         .refreshable {
-            await library.syncBookmarks()
-            await library.importShikimori()
+            await library.syncBookmarks(force: true)
+            await library.importShikimori(force: true)
         }
     }
 }
@@ -132,7 +132,7 @@ struct BookmarkFolderView: View {
             }
         }
         .navigationTitle(status.title)
-        .refreshable { await library.syncBookmarks() }
+        .refreshable { await library.syncBookmarks(force: true) }
     }
 }
 
@@ -218,7 +218,7 @@ struct SettingsView: View {
                 Section {
                     if libLoggedIn {
                         LabeledContent("AnimeLib", value: LibSession.username ?? "вход выполнен")
-                        Button("Синхронизировать закладки") { Task { await library.syncBookmarks() } }
+                        Button("Синхронизировать закладки") { Task { await library.syncBookmarks(force: true) } }
                         Button("Выйти из AnimeLib", role: .destructive) {
                             LibSession.clear()
                             LibAPI.clearCache()
@@ -230,7 +230,7 @@ struct SettingsView: View {
                     if shiki.isLoggedIn {
                         LabeledContent("Shikimori", value: ShikiSession.nickname ?? "вход выполнен")
                         Button(library.shikiImport == nil ? "Загрузить мой список с Shikimori" : "Загружаем список…") {
-                            Task { await library.importShikimori() }
+                            Task { await library.importShikimori(force: true) }
                         }
                         .disabled(library.shikiImport != nil)
                         Button("Выйти из Shikimori", role: .destructive) {
@@ -251,7 +251,7 @@ struct SettingsView: View {
                         .onChange(of: notify) { on in
                             Task {
                                 if on { notify = await EpisodeNotifier.enable() } else { EpisodeNotifier.isEnabled = false }
-                                await EpisodeNotifier.reschedule(titles: library.watchingTitles)
+                                await EpisodeNotifier.reschedule(titles: library.watchingTitles, force: true)
                             }
                         }
                 } footer: {
@@ -360,11 +360,11 @@ struct SettingsView: View {
             .sheet(isPresented: $showLibLogin) {
                 LibLoginView { ok in
                     libLoggedIn = LibSession.isLoggedIn
-                    if ok { Task { await library.syncBookmarks() } }
+                    if ok { Task { await library.syncBookmarks(force: true) } }
                 }
             }
             .sheet(isPresented: $showShikiLogin) {
-                ShikiLoginView { Task { await library.importShikimori() } }
+                ShikiLoginView { Task { await library.importShikimori(force: true) } }
             }
             .confirmationDialog("Очистить историю и прогресс?", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("Очистить", role: .destructive) { library.clearHistory() }

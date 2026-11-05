@@ -18,6 +18,35 @@ final class HomeModel: ObservableObject {
     @Published var loaded = false
     @Published var error: String?
 
+    // MARK: Snapshot — last home screen is shown instantly on launch, then refreshed.
+
+    private struct Snapshot: Codable {
+        var featured: [Title]
+        var backgrounds: [Int: URL]
+        var ongoing, updated, popular, top, newest: [Title]
+    }
+
+    private static let snapshotURL: URL = FileManager.default
+        .urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("home.json")
+
+    init() {
+        guard let data = try? Data(contentsOf: Self.snapshotURL),
+              let s = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+        featured = s.featured.map { Featured(title: $0, background: s.backgrounds[$0.id]) }
+        ongoing = s.ongoing; updated = s.updated; popular = s.popular; top = s.top; newest = s.newest
+        loaded = !ongoing.isEmpty || !popular.isEmpty
+    }
+
+    private func saveSnapshot() {
+        let s = Snapshot(featured: featured.map(\.title),
+                         backgrounds: Dictionary(featured.compactMap { f in f.background.map { (f.title.id, $0) } },
+                                                 uniquingKeysWith: { a, _ in a }),
+                         ongoing: ongoing, updated: updated, popular: popular, top: top, newest: newest)
+        if let data = try? JSONEncoder().encode(s) { try? data.write(to: Self.snapshotURL, options: .atomic) }
+    }
+
+    private var lastLoad = Date.distantPast
+
     /// "Для вас": titles similar to what the user watched recently, minus what they already know.
     func loadForYou(seeds: [Title], known: Set<Int>) async {
         guard !seeds.isEmpty else { forYou = []; return }
@@ -30,7 +59,9 @@ final class HomeModel: ObservableObject {
         forYou = Array(out.prefix(24))
     }
 
-    func load() async {
+    func load(force: Bool = false) async {
+        guard force || Date().timeIntervalSince(lastLoad) > 15 * 60 else { return }
+        lastLoad = Date()
         error = nil
         func fetch(_ q: CatalogQuery) -> Task<[Title]?, Never> {
             Task { try? await LibAPI.catalog(q, page: 1).items }
@@ -42,13 +73,15 @@ final class HomeModel: ObservableObject {
         let n = fetch(CatalogQuery(sort: .newest))
         let ongoing = await o.value, updated = await u.value, popular = await p.value
         let top = await t.value, newest = await n.value
-        self.ongoing = Array((ongoing ?? []).prefix(24))
-        self.updated = Array((updated ?? []).prefix(24))
-        self.popular = Array((popular ?? []).prefix(24))
-        self.top = Array((top ?? []).prefix(24))
-        self.newest = Array((newest ?? []).filter { $0.statusId != 3 }.prefix(24))
+        // Keep what is on screen (cached snapshot) if a request failed.
+        if let ongoing, !ongoing.isEmpty { self.ongoing = Array(ongoing.prefix(24)) }
+        if let updated, !updated.isEmpty { self.updated = Array(updated.prefix(24)) }
+        if let popular, !popular.isEmpty { self.popular = Array(popular.prefix(24)) }
+        if let top, !top.isEmpty { self.top = Array(top.prefix(24)) }
+        if let newest, !newest.isEmpty { self.newest = Array(newest.filter { $0.statusId != 3 }.prefix(24)) }
         if self.ongoing.isEmpty && self.popular.isEmpty {
             error = "Не удалось загрузить AnimeLib. Проверьте подключение."
+            lastLoad = .distantPast
         }
         loaded = true
 
@@ -60,7 +93,9 @@ final class HomeModel: ObservableObject {
             for await (id, url) in group { if let url { out[id] = url } }
             return out
         }
-        featured = picks.filter { backgrounds[$0.id] != nil }.map { Featured(title: $0, background: backgrounds[$0.id]) }
+        let fresh = picks.filter { backgrounds[$0.id] != nil }.map { Featured(title: $0, background: backgrounds[$0.id]) }
+        if !fresh.isEmpty { featured = fresh }
+        saveSnapshot()
     }
 }
 
@@ -123,7 +158,7 @@ struct HomeView: View {
                       seeAll: CatalogRoute(title: "Новинки", query: CatalogQuery(sort: .newest)))
 
                 if let e = model.error {
-                    ErrorState(message: e) { Task { await model.load() } }
+                    ErrorState(message: e) { Task { await model.load(force: true) } }
                 }
             }
             .padding(.bottom, 24)
@@ -131,9 +166,9 @@ struct HomeView: View {
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
         .appDestinations()
-        .refreshable { await model.load() }
+        .refreshable { await model.load(force: true) }
         .task {
-            if !model.loaded { await model.load() }
+            await model.load()
             let known = Set(library.history.map(\.title.id)).union(library.bookmarks.values.map(\.title.id))
             let seeds = library.history.map(\.title) + library.watchingTitles + library.titles(in: .favorite)
             await model.loadForYou(seeds: seeds, known: known)

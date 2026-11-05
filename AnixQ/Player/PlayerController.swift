@@ -171,6 +171,8 @@ final class PlayerController: ObservableObject {
             } else if let p = players.first(where: { $0.team.id == team.id && $0.isKodik }),
                       let src = p.kodikSrc, let url = LibAPI.kodikURL(src) {
                 kodikURL = url
+                // No position from a web player: still record the episode in history.
+                library?.touch(title: title, episode: ep, team: team.team)
             } else {
                 throw LibError.noVideo
             }
@@ -315,6 +317,10 @@ final class PlayerController: ObservableObject {
 
     func go(to i: Int) {
         guard episodes.indices.contains(i), i != index else { return }
+        // Web player: moving forward means the previous episode was watched.
+        if !isNative, i > index {
+            library?.markWatched(title: title, episode: episode, totalEpisodes: episodes.count)
+        }
         index = i
         Task { await load() }
     }

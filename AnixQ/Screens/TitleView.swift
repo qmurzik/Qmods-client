@@ -38,25 +38,60 @@ final class TitleModel: ObservableObject {
 
     init(title: Title) { self.title = title }
 
-    var displayTitle: Title { detail?.title ?? title }
+    // MARK: Cache — reopening a recent title is instant.
 
-    func load(lastTeamId: Int?) async {
-        // Independent tasks instead of `async let` (avoids a Swift runtime task-allocator crash).
-        let slug = title.slugURL
-        let d = Task { try? await LibAPI.detail(slug) }
-        let r = Task { await LibAPI.related(slug) }
-        let s = Task { await LibAPI.similar(slug) }
-        await loadEpisodes(lastTeamId: lastTeamId)
-        detail = await d.value
-        related = await r.value
-        similar = await s.value
-        if let sid = (detail?.title ?? title).shikiId {
-            shiki = try? await ShikiAPI.anime(sid)
-            let roles = await ShikiAPI.roles(sid)
-            characters = roles.characters
-            staff = roles.staff
-            videos = await ShikiAPI.videos(sid)
+    private static var cache: [String: TitleModel] = [:]
+    private static var cacheOrder: [String] = []
+
+    static func shared(for title: Title) -> TitleModel {
+        if let m = cache[title.slugURL] {
+            cacheOrder.removeAll { $0 == title.slugURL }
+            cacheOrder.append(title.slugURL)
+            return m
         }
+        let m = TitleModel(title: title)
+        cache[title.slugURL] = m
+        cacheOrder.append(title.slugURL)
+        if cacheOrder.count > 12 { cache[cacheOrder.removeFirst()] = nil }
+        return m
+    }
+
+    var displayTitle: Title { detail?.title ?? title }
+    private(set) var loadedAt: Date?
+
+    /// Every block is filled as soon as its own request finishes (header first, Shikimori in parallel).
+    /// Independent tasks instead of `async let` (avoids a Swift runtime task-allocator crash).
+    func load(lastTeamId: Int?, force: Bool = false) async {
+        if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < 600, !episodes.isEmpty { return }
+        error = nil
+        let slug = title.slugURL
+        let header = Task { [weak self] in
+            let d = try? await LibAPI.detail(slug)
+            await MainActor.run { if let d { self?.detail = d } }
+            await self?.loadShikimori()
+        }
+        let extras = Task { [weak self] in
+            let r = await LibAPI.related(slug)
+            await MainActor.run { self?.related = r }
+            let s = await LibAPI.similar(slug)
+            await MainActor.run { self?.similar = s }
+        }
+        await loadEpisodes(lastTeamId: lastTeamId)
+        await header.value
+        await extras.value
+        if error == nil { loadedAt = Date() }
+    }
+
+    private func loadShikimori() async {
+        guard let sid = (detail?.title ?? title).shikiId else { return }
+        let info = Task { try? await ShikiAPI.anime(sid) }
+        let roles = Task { await ShikiAPI.roles(sid) }
+        let vids = Task { await ShikiAPI.videos(sid) }
+        shiki = await info.value
+        let r = await roles.value
+        characters = r.characters
+        staff = r.staff
+        videos = await vids.value
     }
 
     func loadEpisodes(lastTeamId: Int?) async {
@@ -121,7 +156,7 @@ struct TitleView: View {
     @State private var showAllEpisodes = false
 
     init(title: Title) {
-        _model = StateObject(wrappedValue: TitleModel(title: title))
+        _model = StateObject(wrappedValue: TitleModel.shared(for: title))
     }
 
     private var t: Title { model.displayTitle }
@@ -158,9 +193,10 @@ struct TitleView: View {
             }
         }
         .task {
-            if model.episodes.isEmpty { await model.load(lastTeamId: library.lastEntry(titleId: t.id)?.teamId) }
+            await model.load(lastTeamId: library.lastEntry(titleId: t.id)?.teamId)
             if let g = model.detail?.genres.map(\.name) { library.recordGenres(titleId: t.id, names: g) }
         }
+        .refreshable { await model.load(lastTeamId: library.lastEntry(titleId: t.id)?.teamId, force: true) }
         .fullScreenCover(item: $play) { req in
             PlayerScreen(title: t, background: model.detail?.backgroundURL, episodes: model.episodes,
                          teams: model.teams, startIndex: req.episodeIndex, team: req.team)
@@ -312,7 +348,13 @@ struct TitleView: View {
             if model.loadingEpisodes && model.episodes.isEmpty {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 120)
             } else if model.episodes.isEmpty {
-                Text(model.error ?? "Серий пока нет").foregroundStyle(.secondary).padding(.horizontal)
+                if let e = model.error {
+                    ErrorState(message: e) {
+                        Task { await model.load(lastTeamId: library.lastEntry(titleId: t.id)?.teamId, force: true) }
+                    }
+                } else {
+                    Text("Серий пока нет").foregroundStyle(.secondary).padding(.horizontal)
+                }
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {

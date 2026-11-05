@@ -95,9 +95,7 @@ struct TraceSearchView: View {
     @State private var crop = CGRect(x: 0, y: 0, width: 1, height: 1)
     @State private var characterMatches: [CharacterMatch] = []
     @State private var recognising = false
-    @State private var textMatches: [Title] = []
-    @State private var textQueries: [String] = []
-    @State private var readingText = false
+    @State private var didSearch = false
 
     var body: some View {
         NavigationStack {
@@ -127,11 +125,10 @@ struct TraceSearchView: View {
                          ? "Кадр из аниме — найдём тайтл, серию и момент."
                          : "Оставьте в рамке только само видео: без кнопок плеера, статус-бара и субтитров. Область видео подбирается автоматически.")
                 }
-                if searching { HStack { Spacer(); ProgressView("Ищем…"); Spacer() } }
-                if let error { Text(error).foregroundStyle(.orange) }
-                if recognising && characterMatches.isEmpty {
+                if searching || recognising {
                     HStack { Spacer(); ProgressView("Узнаём персонажей…"); Spacer() }
                 }
+                if let error { Text(error).foregroundStyle(.orange) }
                 if !characterMatches.isEmpty {
                     Section {
                         ForEach(characterMatches) { m in
@@ -142,6 +139,12 @@ struct TraceSearchView: View {
                                         if !m.characters.isEmpty {
                                             Label(m.characters.prefix(2).joined(separator: ", "), systemImage: "person.fill")
                                                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                        // Exact episode/moment when trace.moe confidently found the same title.
+                                        if let scene = scene(for: t) {
+                                            Label([scene.episode.map { "Серия \($0)" }, "момент \(time(scene.from))"]
+                                                .compactMap { $0 }.joined(separator: " · "), systemImage: "film")
+                                                .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
                                         }
                                     }
                                 }
@@ -154,41 +157,14 @@ struct TraceSearchView: View {
                         }
                     } header: {
                         Text("Узнали по персонажу")
-                    } footer: {
-                        Text("AnimeTrace узнаёт персонажей — работает и с кадрами из TikTok/Shorts.")
                     }
+                } else if !recognising, !searching, let best = results.first, best.similarity >= 0.9 {
+                    // Character recognition found nothing: fall back to a confident scene match only.
+                    Section { bestCard(best) } header: { Text("Совпадение по кадру") }
+                } else if !recognising, !searching, image != nil, error == nil, didSearch {
+                    Text("Не удалось узнать. Попробуйте кадр, где крупно видно лицо персонажа.")
+                        .foregroundStyle(.secondary)
                 }
-                if !textMatches.isEmpty {
-                    Section {
-                        ForEach(textMatches) { t in
-                            NavigationLink(value: t) { TitleRow(title: t) }
-                        }
-                    } header: {
-                        Text("По тексту на скриншоте")
-                    } footer: {
-                        Text("Нашлось по словам: " + textQueries.prefix(4).joined(separator: ", "))
-                    }
-                } else if readingText {
-                    HStack { Spacer(); ProgressView("Читаем текст на скриншоте…"); Spacer() }
-                }
-                if let best = results.first {
-                    Section {
-                        bestCard(best)
-                        if best.similarity < 0.87 {
-                            Label("Неуверенное совпадение. Кадры из коротких видео (TikTok/Shorts) обрезаны и часто отзеркалены — по ним trace.moe ошибается. Лучше скриншот из полноценной серии.",
-                                  systemImage: "exclamationmark.triangle")
-                                .font(.caption).foregroundStyle(.orange)
-                        }
-                    } header: { Text(best.similarity >= 0.87 ? "Похоже, это" : "Возможно, это (неуверенно)") }
-                }
-                if results.count > 1 {
-                    Section("Другие варианты") {
-                        ForEach(results.dropFirst()) { r in
-                            Button { Task { await open(r) } } label: { row(r) }
-                        }
-                    }
-                }
-            }
             .navigationTitle("Поиск по кадру")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
@@ -248,6 +224,11 @@ struct TraceSearchView: View {
         }
     }
 
+    /// trace.moe result for the same title (MAL id = Shikimori id), only when confident.
+    private func scene(for t: Title) -> TraceResult? {
+        results.first { $0.similarity >= 0.9 && ($0.malId != nil && $0.malId == t.shikiId || $0.anilistId == t.anilistId) }
+    }
+
     private func time(_ s: Double) -> String { String(format: "%d:%02d", Int(s) / 60, Int(s) % 60) }
 
     private func load(_ item: PhotosPickerItem?) async {
@@ -266,16 +247,6 @@ struct TraceSearchView: View {
         crop = CropEditor.detectVideo(in: small)
         results = []
         error = nil
-        textMatches = []
-        // Read captions / hashtags in parallel: they often name the anime outright.
-        readingText = true
-        Task {
-            let lines = await TextHints.recognize(small)
-            let queries = TextHints.queries(from: lines)
-            textQueries = queries
-            textMatches = queries.isEmpty ? [] : await TextHints.search(queries)
-            readingText = false
-        }
         // Clean landscape frames need no adjustment: search right away.
         if crop == CGRect(x: 0, y: 0, width: 1, height: 1), small.size.width > small.size.height {
             await runSearch()
@@ -291,6 +262,7 @@ struct TraceSearchView: View {
         let frame = CropEditor.cropped(image, to: crop)
         // Character recognition in parallel with scene search.
         characterMatches = []
+        didSearch = false
         recognising = true
         Task {
             var found = await AnimeTraceAPI.search(frame)
@@ -301,22 +273,9 @@ struct TraceSearchView: View {
         guard let jpeg = frame.jpegData(compressionQuality: 0.85) else { return }
         DebugLog.log(String(format: "trace: searching %.0fx%.0f crop %.2f,%.2f %.2fx%.2f", frame.size.width, frame.size.height,
                             crop.minX, crop.minY, crop.width, crop.height))
-        do {
-            results = try await TraceMoe.search(jpeg)
-            // Short videos are often mirrored: retry flipped when the match is weak, keep the better one.
-            if (results.first?.similarity ?? 0) < 0.87, let flipped = Self.mirrored(frame).jpegData(compressionQuality: 0.85) {
-                let alt = (try? await TraceMoe.search(flipped)) ?? []
-                if (alt.first?.similarity ?? 0) > (results.first?.similarity ?? 0) + 0.02 {
-                    DebugLog.log("trace: mirrored frame matched better")
-                    results = alt
-                }
-            }
-            if results.isEmpty && textMatches.isEmpty && characterMatches.isEmpty && !recognising {
-                error = "Ничего не нашлось"
-            }
-        } catch {
-            self.error = error.localizedDescription
-        }
+        // Scene search only adds the episode/moment; its errors are not shown to the user.
+        results = (try? await TraceMoe.search(jpeg)) ?? []
+        didSearch = true
     }
 
     static func mirrored(_ image: UIImage) -> UIImage {

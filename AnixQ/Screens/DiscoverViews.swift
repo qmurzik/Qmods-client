@@ -90,15 +90,14 @@ struct TraceSearchView: View {
     @State private var searching = false
     @State private var error: String?
     @State private var resolving: UUID?
-    @State private var opened: Title?
-    @State private var showOpened = false
+    @State private var path = NavigationPath()
     @State private var crop = CGRect(x: 0, y: 0, width: 1, height: 1)
     @State private var characterMatches: [CharacterMatch] = []
     @State private var recognising = false
     @State private var didSearch = false
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section {
                     PhotosPicker(selection: $pick, matching: .images) {
@@ -172,9 +171,6 @@ struct TraceSearchView: View {
             .navigationTitle("Поиск по кадру")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
-            .navigationDestination(isPresented: $showOpened) {
-                if let opened { TitleView(title: opened) }
-            }
             .appDestinations()
             .onChange(of: pick) { item in Task { await load(item) } }
         }
@@ -296,8 +292,7 @@ struct TraceSearchView: View {
         resolving = r.id
         defer { resolving = nil }
         if let t = await TraceMoe.resolve(r) {
-            opened = t
-            showOpened = true
+            path.append(t)
         } else {
             error = "«\(r.title)» не нашёлся на AnimeLib"
         }

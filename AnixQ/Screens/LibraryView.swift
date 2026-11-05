@@ -40,14 +40,10 @@ struct LibraryView: View {
             }
 
             Section {
-                NavigationLink {
-                    StatsView()
-                } label: {
+                NavigationLink(value: LibraryRoute.stats) {
                     Label("Статистика", systemImage: "chart.bar.xaxis")
                 }
-                NavigationLink {
-                    DownloadsView()
-                } label: {
+                NavigationLink(value: LibraryRoute.downloads) {
                     HStack {
                         Label("Загрузки", systemImage: "arrow.down.circle")
                         Spacer()
@@ -59,9 +55,7 @@ struct LibraryView: View {
 
             Section("Закладки") {
                 ForEach(BookmarkStatus.allCases) { s in
-                    NavigationLink {
-                        BookmarkFolderView(status: s)
-                    } label: {
+                    NavigationLink(value: LibraryRoute.folder(s)) {
                         HStack {
                             Label(s.title, systemImage: s.icon)
                             Spacer()
@@ -106,6 +100,7 @@ struct LibraryView: View {
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }
         }
+        .libraryDestinations()
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showLibLogin) {
             LibLoginView { ok in if ok { Task { await library.syncBookmarks(force: true) } } }
@@ -114,6 +109,25 @@ struct LibraryView: View {
         .refreshable {
             await library.syncBookmarks(force: true)
             await library.importShikimori(force: true)
+        }
+    }
+}
+
+/// Value-based routes for the Library tab. Mixing destination-based NavigationLinks with the
+/// value-based title links made SwiftUI push titles onto the wrong level (folder stayed on top).
+enum LibraryRoute: Hashable {
+    case stats, downloads
+    case folder(BookmarkStatus)
+}
+
+extension View {
+    func libraryDestinations() -> some View {
+        navigationDestination(for: LibraryRoute.self) { route in
+            switch route {
+            case .stats: StatsView()
+            case .downloads: DownloadsView()
+            case .folder(let s): BookmarkFolderView(status: s)
+            }
         }
     }
 }

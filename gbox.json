@@ -6,7 +6,7 @@
   "sourceLinkTitle": "GitHub",
   "sourceLinkUrl": "https://github.com/qmurzik/Qmods-client",
   "sourceImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-  "sourceUpdateTime": "2026-11-05T10:28:50+0000",
+  "sourceUpdateTime": "2026-11-05T10:41:26+0000",
   "sourceDescription": "AnixQ — аниме с AnimeLib: каталог, плеер без рекламы, синхронизация с Shikimori.",
   "appCategories": [
     "Приложения"
@@ -15,13 +15,13 @@
     {
       "appType": "SELF_SIGN",
       "appCateIndex": 0,
-      "appUpdateTime": "2026-11-05T10:28:50+0000",
+      "appUpdateTime": "2026-11-05T10:41:26+0000",
       "appName": "AnixQ",
-      "appVersion": "1.0.33",
+      "appVersion": "1.0.34",
       "appImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.33/AnixQ.ipa",
-      "appSize": 1943948,
-      "appDescription": "Search by frame: read captions/hashtags, mirrored retry, honest confidence\n\nShort-video screenshots are cropped to vertical, often mirrored and covered\nwith UI, so trace.moe returns confident wrong matches. Now:\n- text on the screenshot is recognised (Vision) and searched on Shikimori\n  (which matches partial names such as character names), then mapped to\n  AnimeLib; shown first as 'По тексту на скриншоте'\n- weak matches are retried with a mirrored frame and the better result kept\n- matches under 87% are labelled uncertain with an explanation"
+      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.34/AnixQ.ipa",
+      "appSize": 1968548,
+      "appDescription": "Search by frame: recognise characters with AnimeTrace\n\ntrace.moe matches whole frames and fails on short-video screenshots (cropped\nto vertical, mirrored, overlaid). AnimeTrace recognises characters instead:\non the user's GTok screenshot it identified Alisa Mikhailovna Kujou from\n'Alya Sometimes Hides Her Feelings in Russian', where trace.moe returned an\nunrelated title. Runs in parallel with trace.moe; the work title (usually\nJapanese) is matched via Shikimori search to AnimeLib and shown first as\n'Узнали по персонажу' with the recognised characters."
     }
   ]
 }

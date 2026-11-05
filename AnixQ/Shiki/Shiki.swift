@@ -235,6 +235,18 @@ enum ShikiAPI {
                               nextEpisodeAt: parseDate(x.str("next_episode_at")), status: x.str("status"))
     }
 
+    /// Title search (Shikimori matches partial Russian names far better than AnimeLib).
+    static func search(_ query: String, limit: Int = 5) async -> [(id: Int, russian: String, name: String)] {
+        var c = URLComponents(string: "/api/animes")!
+        c.queryItems = [URLQueryItem(name: "search", value: query), URLQueryItem(name: "limit", value: String(limit)),
+                        URLQueryItem(name: "order", value: "popularity")]
+        guard let path = c.string, let json = try? await request(path, auth: false) as? [JSON] else { return [] }
+        return json.compactMap { x -> (id: Int, russian: String, name: String)? in
+            guard let id = x.int("id") else { return nil }
+            return (id, x.str("russian") ?? "", x.str("name") ?? "")
+        }
+    }
+
     /// The whole franchise in release order (Shikimori keeps franchises curated, no crossovers).
     static func franchise(_ id: Int) async -> [FranchiseNode] {
         guard let json = try? await request("/api/animes/\(id)/franchise", auth: false) as? JSON else { return [] }

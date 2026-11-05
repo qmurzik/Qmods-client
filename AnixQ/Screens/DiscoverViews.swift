@@ -93,6 +93,9 @@ struct TraceSearchView: View {
     @State private var opened: Title?
     @State private var showOpened = false
     @State private var crop = CGRect(x: 0, y: 0, width: 1, height: 1)
+    @State private var textMatches: [Title] = []
+    @State private var textQueries: [String] = []
+    @State private var readingText = false
 
     var body: some View {
         NavigationStack {
@@ -124,15 +127,28 @@ struct TraceSearchView: View {
                 }
                 if searching { HStack { Spacer(); ProgressView("Ищем…"); Spacer() } }
                 if let error { Text(error).foregroundStyle(.orange) }
+                if !textMatches.isEmpty {
+                    Section {
+                        ForEach(textMatches) { t in
+                            NavigationLink(value: t) { TitleRow(title: t) }
+                        }
+                    } header: {
+                        Text("По тексту на скриншоте")
+                    } footer: {
+                        Text("Нашлось по словам: " + textQueries.prefix(4).joined(separator: ", "))
+                    }
+                } else if readingText {
+                    HStack { Spacer(); ProgressView("Читаем текст на скриншоте…"); Spacer() }
+                }
                 if let best = results.first {
                     Section {
                         bestCard(best)
                         if best.similarity < 0.87 {
-                            Label("Совпадение неуверенное. Попробуйте обрезать интерфейс и сделать кадр почётче.",
+                            Label("Неуверенное совпадение. Кадры из коротких видео (TikTok/Shorts) обрезаны и часто отзеркалены — по ним trace.moe ошибается. Лучше скриншот из полноценной серии.",
                                   systemImage: "exclamationmark.triangle")
                                 .font(.caption).foregroundStyle(.orange)
                         }
-                    } header: { Text("Похоже, это") }
+                    } header: { Text(best.similarity >= 0.87 ? "Похоже, это" : "Возможно, это (неуверенно)") }
                 }
                 if results.count > 1 {
                     Section("Другие варианты") {
@@ -219,6 +235,16 @@ struct TraceSearchView: View {
         crop = CropEditor.detectVideo(in: small)
         results = []
         error = nil
+        textMatches = []
+        // Read captions / hashtags in parallel: they often name the anime outright.
+        readingText = true
+        Task {
+            let lines = await TextHints.recognize(small)
+            let queries = TextHints.queries(from: lines)
+            textQueries = queries
+            textMatches = queries.isEmpty ? [] : await TextHints.search(queries)
+            readingText = false
+        }
         // Clean landscape frames need no adjustment: search right away.
         if crop == CGRect(x: 0, y: 0, width: 1, height: 1), small.size.width > small.size.height {
             await runSearch()
@@ -237,9 +263,27 @@ struct TraceSearchView: View {
                             crop.minX, crop.minY, crop.width, crop.height))
         do {
             results = try await TraceMoe.search(jpeg)
-            if results.isEmpty { error = "Ничего не нашлось" }
+            // Short videos are often mirrored: retry flipped when the match is weak, keep the better one.
+            if (results.first?.similarity ?? 0) < 0.87, let flipped = Self.mirrored(frame).jpegData(compressionQuality: 0.85) {
+                let alt = (try? await TraceMoe.search(flipped)) ?? []
+                if (alt.first?.similarity ?? 0) > (results.first?.similarity ?? 0) + 0.02 {
+                    DebugLog.log("trace: mirrored frame matched better")
+                    results = alt
+                }
+            }
+            if results.isEmpty && textMatches.isEmpty { error = "Ничего не нашлось" }
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    static func mirrored(_ image: UIImage) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { ctx in
+            ctx.cgContext.translateBy(x: image.size.width, y: 0)
+            ctx.cgContext.scaleBy(x: -1, y: 1)
+            image.draw(at: .zero)
         }
     }
 

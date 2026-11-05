@@ -92,6 +92,7 @@ struct TraceSearchView: View {
     @State private var resolving: UUID?
     @State private var opened: Title?
     @State private var showOpened = false
+    @State private var crop = CGRect(x: 0, y: 0, width: 1, height: 1)
 
     var body: some View {
         NavigationStack {
@@ -101,11 +102,25 @@ struct TraceSearchView: View {
                         Label(image == nil ? "Выбрать кадр" : "Другой кадр", systemImage: "photo.on.rectangle")
                     }
                     if let image {
-                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        CropEditor(image: image, crop: $crop)
+                            .frame(height: 280)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                        Button {
+                            Task { await runSearch() }
+                        } label: {
+                            HStack {
+                                if searching { ProgressView().tint(.black) } else { Image(systemName: "sparkle.magnifyingglass") }
+                                Text("Найти аниме")
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(searching)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 8, trailing: 12))
                     }
                 } footer: {
-                    Text("Лучше всего работает чистый кадр: без интерфейса плеера, субтитров и рамок. Скриншот с полноэкранного видео подходит.")
+                    Text(image == nil
+                         ? "Кадр из аниме — найдём тайтл, серию и момент."
+                         : "Оставьте в рамке только само видео: без кнопок плеера, статус-бара и субтитров. Область видео подбирается автоматически.")
                 }
                 if searching { HStack { Spacer(); ProgressView("Ищем…"); Spacer() } }
                 if let error { Text(error).foregroundStyle(.orange) }
@@ -194,18 +209,32 @@ struct TraceSearchView: View {
             error = "Не удалось открыть изображение"
             return
         }
-        image = img
-        results = []
-        error = nil
-        searching = true
-        defer { searching = false }
-        // trace.moe limits upload size; ~1280 px JPEG keeps detail without hitting limits.
-        let scale = min(1, 1280 / max(img.size.width, img.size.height))
+        // Normalise orientation and size (~1600 px), then let the user adjust the crop.
+        let scale = min(1, 1600 / max(img.size.width, img.size.height))
         let size = CGSize(width: img.size.width * scale, height: img.size.height * scale)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
-        guard let jpeg = small.jpegData(compressionQuality: 0.85) else { return }
+        image = small
+        crop = CropEditor.detectVideo(in: small)
+        results = []
+        error = nil
+        // Clean landscape frames need no adjustment: search right away.
+        if crop == CGRect(x: 0, y: 0, width: 1, height: 1), small.size.width > small.size.height {
+            await runSearch()
+        }
+    }
+
+    private func runSearch() async {
+        guard let image else { return }
+        searching = true
+        results = []
+        error = nil
+        defer { searching = false }
+        let frame = CropEditor.cropped(image, to: crop)
+        guard let jpeg = frame.jpegData(compressionQuality: 0.85) else { return }
+        DebugLog.log(String(format: "trace: searching %.0fx%.0f crop %.2f,%.2f %.2fx%.2f", frame.size.width, frame.size.height,
+                            crop.minX, crop.minY, crop.width, crop.height))
         do {
             results = try await TraceMoe.search(jpeg)
             if results.isEmpty { error = "Ничего не нашлось" }

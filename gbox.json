@@ -6,7 +6,7 @@
   "sourceLinkTitle": "GitHub",
   "sourceLinkUrl": "https://github.com/qmurzik/Qmods-client",
   "sourceImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-  "sourceUpdateTime": "2026-11-05T10:17:33+0000",
+  "sourceUpdateTime": "2026-11-05T10:18:15+0000",
   "sourceDescription": "AnixQ — аниме с AnimeLib: каталог, плеер без рекламы, синхронизация с Shikimori.",
   "appCategories": [
     "Приложения"
@@ -15,13 +15,13 @@
     {
       "appType": "SELF_SIGN",
       "appCateIndex": 0,
-      "appUpdateTime": "2026-11-05T10:17:33+0000",
+      "appUpdateTime": "2026-11-05T10:18:15+0000",
       "appName": "AnixQ",
-      "appVersion": "1.0.31",
+      "appVersion": "1.0.32",
       "appImage": "https://raw.githubusercontent.com/qmurzik/Qmods-client/gbox-source/icon.png",
-      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.31/AnixQ.ipa",
-      "appSize": 1904486,
-      "appDescription": "Search by screenshot: reliable AnimeLib matching and clearer results\n\ntrace.moe recognised frames fine; titles were lost when matching to\nAnimeLib because many entries lack an AniList id. Matching now tries the\nAniList id, then the MAL id (equal to the Shikimori id AnimeLib stores),\nthen an exact title match. Results are grouped per anime with the AniList\ncover, the best match shown as a card with the frame, episode and moment,\na warning for low-confidence matches, and steps logged to Diagnostics."
+      "appPackage": "https://github.com/qmurzik/Qmods-client/releases/download/v1.0.32/AnixQ.ipa",
+      "appSize": 1920629,
+      "appDescription": "Search by frame: automatic video-area crop with manual adjustment\n\nPhone screenshots with player controls or app UI around the video made\ntrace.moe return confident wrong matches (a test screenshot: wrong title at\n88%; the same frame cropped: correct title at 98.8%). The picked image is\nnormalised, the video band is detected from row activity, shown in an\nadjustable crop frame, and only the cropped frame is sent. Clean landscape\nframes are searched immediately."
     }
   ]
 }

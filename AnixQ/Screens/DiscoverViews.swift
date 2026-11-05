@@ -133,6 +133,7 @@ struct TraceSearchView: View {
                     Section {
                         ForEach(characterMatches) { m in
                             if let t = m.title {
+                                HStack(spacing: 8) {
                                 NavigationLink(value: t) {
                                     VStack(alignment: .leading, spacing: 4) {
                                         TitleRow(title: t)
@@ -147,6 +148,8 @@ struct TraceSearchView: View {
                                                 .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
                                         }
                                     }
+                                }
+                                    PlanButton(title: t)
                                 }
                             } else {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -165,6 +168,7 @@ struct TraceSearchView: View {
                     Text("Не удалось узнать. Попробуйте кадр, где крупно видно лицо персонажа.")
                         .foregroundStyle(.secondary)
                 }
+            }
             .navigationTitle("Поиск по кадру")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
@@ -427,5 +431,26 @@ enum SpotlightIndexer {
                 if let error { DebugLog.log("spotlight: \(error.localizedDescription)") }
             }
         }
+    }
+}
+
+
+/// One-tap "Хочу посмотреть": puts the title into Запланировано (synced to AnimeLib / Shikimori).
+struct PlanButton: View {
+    let title: Title
+    @EnvironmentObject private var library: LibraryStore
+
+    var body: some View {
+        let current = library.bookmark(for: title.slugURL)
+        Button {
+            if current == nil { library.setBookmark(title: title, status: .planned) }
+        } label: {
+            Image(systemName: current == nil ? "bookmark" : "bookmark.fill")
+                .font(.title3)
+                .foregroundStyle(current == nil ? Theme.accent : .secondary)
+                .frame(width: 40, height: 40)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(current == nil ? "Хочу посмотреть" : current!.title)
     }
 }

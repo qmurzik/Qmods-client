@@ -61,7 +61,11 @@ final class LibraryStore: ObservableObject {
 
     private var saveTask: Task<Void, Never>?
 
+    /// The app's single store (for background tasks).
+    static weak var current: LibraryStore?
+
     init() {
+        defer { LibraryStore.current = self }
         if let data = try? Data(contentsOf: fileURL),
            let s = try? JSONDecoder().decode(Snapshot.self, from: data) {
             history = s.history

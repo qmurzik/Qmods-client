@@ -13,6 +13,7 @@ struct AnixQApp: App {
 
     init() {
         CrashReporter.install()
+        WatchingUpdater.registerBackgroundTask { LibraryStore.current }
         URLCache.shared = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 128 * 1024 * 1024)
         Theme.configureAppearance()
     }
@@ -27,6 +28,7 @@ struct AnixQApp: App {
                 .task { AdBlocker.shared.warmUp() }
         }
         .onChange(of: scenePhase) { phase in
+            if phase == .background { WatchingUpdater.scheduleBackgroundRefresh() }
             guard phase == .active else { return }
             Task {
                 if LibSession.isLoggedIn {
@@ -50,6 +52,7 @@ struct RootView: View {
     private let autoplaySlug = UserDefaults.standard.string(forKey: "autoplaySlug")
 
     @State private var deepLink: DeepLink?
+    @State private var shikiLink: ShikiLink?
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var network = NetworkMonitor.shared
 
@@ -72,6 +75,20 @@ struct RootView: View {
                         deepLink = DeepLink(slug: slug)
                     } else if url.host == "schedule" {
                         tab = .schedule
+                    } else if url.host == "shiki" || url.host == "plan",
+                              let id = url.pathComponents.dropFirst().first.flatMap({ Int($0) }) {
+                        // From the share extension "Что за аниме?".
+                        let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                        let names = ["o", "n"].compactMap { k in q.first { $0.name == k }?.value }
+                        let route = ShikiRoute(shikiId: id, names: names)
+                        if url.host == "plan" {
+                            Task {
+                                if let t = await LibAPI.title(shikiId: id, names: names) {
+                                    library.setBookmark(title: t, status: .planned)
+                                }
+                            }
+                        }
+                        shikiLink = ShikiLink(route: route)
                     }
                 }
                 .overlay(alignment: .bottom) {
@@ -94,6 +111,17 @@ struct RootView: View {
                     if let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
                        id.hasPrefix("title:") {
                         deepLink = DeepLink(slug: String(id.dropFirst(6)))
+                    }
+                }
+                .sheet(item: $shikiLink) { link in
+                    NavigationStack {
+                        ResolveShikiView(route: link.route)
+                            .appDestinations()
+                            .toolbar {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    Button("Закрыть") { shikiLink = nil }
+                                }
+                            }
                     }
                 }
                 .sheet(item: $deepLink) { link in
@@ -145,6 +173,11 @@ struct RootView: View {
 struct DeepLink: Identifiable {
     let slug: String
     var id: String { slug }
+}
+
+struct ShikiLink: Identifiable {
+    let route: ShikiRoute
+    var id: Int { route.shikiId }
 }
 
 struct DebugTitleLoader: View {

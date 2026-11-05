@@ -15,6 +15,33 @@ final class HomeModel: ObservableObject {
     @Published var top: [Title] = []
     @Published var newest: [Title] = []
     @Published var forYou: [Title] = []
+    @Published var nextSeasons: [Title] = []
+    private var nextSeasonsLoaded = Date.distantPast
+
+    /// For finished titles: the next main entry of the franchise (Shikimori order) the user hasn't
+    /// started or bookmarked yet.
+    func loadNextSeasons(library: LibraryStore) async {
+        guard Date().timeIntervalSince(nextSeasonsLoaded) > 30 * 60 else { return }
+        nextSeasonsLoaded = Date()
+        var finished: [Title] = library.titles(in: .completed)
+        for e in library.history where e.progress > 0.92 && !finished.contains(where: { $0.id == e.title.id }) {
+            finished.append(e.title)
+        }
+        let known = Set(library.history.map(\.title.shikiId)).union(library.bookmarks.values.map(\.title.shikiId))
+        var out: [Title] = []
+        for t in finished.prefix(8) {
+            guard let sid = t.shikiId else { continue }
+            let nodes = await ShikiAPI.franchise(sid)
+            guard let me = nodes.first(where: { $0.shikiId == sid }) else { continue }
+            let next = nodes.first { $0.date > me.date && $0.isMain && !known.contains($0.shikiId)
+                && $0.date < Date() }
+            if let next, let title = await LibAPI.title(shikiId: next.shikiId, names: [next.name]),
+               !out.contains(where: { $0.id == title.id }) {
+                out.append(title)
+            }
+        }
+        nextSeasons = out
+    }
     @Published var loaded = false
     @Published var error: String?
 
@@ -145,6 +172,7 @@ struct HomeView: View {
                         + library.watchingTitles.filter { t in updater.newCount(t.id) > 0
                             && !library.history.contains { $0.title.id == t.id } })
                 Shelf(title: "Смотрю", titles: library.watchingTitles)
+                Shelf(title: "Продолжение франшиз", titles: model.nextSeasons)
                 Shelf(title: "Для вас", titles: model.forYou)
                 Shelf(title: "Новые серии", titles: model.updated,
                       seeAll: CatalogRoute(title: "Новые серии", query: CatalogQuery(sort: .updated)))
@@ -172,6 +200,7 @@ struct HomeView: View {
             let known = Set(library.history.map(\.title.id)).union(library.bookmarks.values.map(\.title.id))
             let seeds = library.history.map(\.title) + library.watchingTitles + library.titles(in: .favorite)
             await model.loadForYou(seeds: seeds, known: known)
+            await model.loadNextSeasons(library: library)
         }
     }
 }

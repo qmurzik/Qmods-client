@@ -614,6 +614,7 @@ struct TitleView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(people) { p in
+                            NavigationLink(value: PersonRoute(id: p.id, isCharacter: p.isCharacter)) {
                             VStack(spacing: 6) {
                                 Theme.card
                                     .frame(width: 76, height: round ? 76 : 100)
@@ -630,6 +631,9 @@ struct TitleView: View {
                                 Text(p.role).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             }
                             .frame(width: 86)
+                            .foregroundStyle(.primary)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal)

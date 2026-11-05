@@ -85,6 +85,7 @@ struct ShikiPerson: Identifiable, Hashable {
     let image: URL?
     let role: String
     let isMain: Bool
+    var isCharacter = true
 }
 
 struct ShikiVideo: Identifiable, Hashable {
@@ -235,6 +236,62 @@ enum ShikiAPI {
                               nextEpisodeAt: parseDate(x.str("next_episode_at")), status: x.str("status"))
     }
 
+    struct PersonPage {
+        let name: String
+        let altName: String?
+        let image: URL?
+        let description: String?
+        let related: [ShikiPerson]          // seyu of a character / characters voiced by a person
+        let works: [(id: Int, name: String, russian: String, year: Int?, role: String)]
+    }
+
+    /// Character (`/api/characters`) or person (`/api/people`) page.
+    static func personPage(id: Int, isCharacter: Bool) async -> PersonPage? {
+        let path = isCharacter ? "/api/characters/\(id)" : "/api/people/\(id)"
+        guard let x = try? await request(path, auth: false) as? JSON else { return nil }
+        func img(_ o: JSON?) -> URL? {
+            o?.obj("image")?.str("original").flatMap { $0.contains("missing") ? nil : URL(string: host + $0) }
+        }
+        // Shikimori BBCode: [character=1]Name[/character] -> Name, drop other tags.
+        let rawDesc = x.str("description") ?? ""
+        let desc = rawDesc
+            .replacingOccurrences(of: "\\[(character|anime|person|manga|ranobe)=\\d+\\]", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\[/?[a-z_]+(=[^\\]]*)?\\]", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var related: [ShikiPerson] = []
+        var works: [(Int, String, String, Int?, String)] = []
+        if isCharacter {
+            related = x.arr("seyu").compactMap { s -> ShikiPerson? in
+                guard let sid = s.int("id") else { return nil }
+                return ShikiPerson(id: sid, name: s.str("russian") ?? s.str("name") ?? "", image: img(s),
+                                   role: "Сейю", isMain: false, isCharacter: false)
+            }
+            works = x.arr("animes").compactMap { a -> (Int, String, String, Int?, String)? in
+                guard let aid = a.int("id") else { return nil }
+                return (aid, a.str("name") ?? "", a.str("russian") ?? "", a.str("aired_on").flatMap { Int($0.prefix(4)) },
+                        a.str("role") ?? "")
+            }
+        } else {
+            for r in x.arr("roles").prefix(30) {
+                for c in r.arr("characters") {
+                    if let cid = c.int("id"), !related.contains(where: { $0.id == cid }) {
+                        related.append(ShikiPerson(id: cid, name: c.str("russian") ?? c.str("name") ?? "", image: img(c),
+                                                   role: "Персонаж", isMain: false, isCharacter: true))
+                    }
+                }
+            }
+            works = x.arr("works").compactMap { w -> (Int, String, String, Int?, String)? in
+                guard let a = w.obj("anime"), let aid = a.int("id") else { return nil }
+                return (aid, a.str("name") ?? "", a.str("russian") ?? "", a.str("aired_on").flatMap { Int($0.prefix(4)) },
+                        w.str("role") ?? "")
+            }
+        }
+        return PersonPage(name: x.str("russian") ?? x.str("name") ?? "", altName: x.str("japanese") ?? x.str("name"),
+                          image: img(x), description: desc.isEmpty ? nil : desc,
+                          related: Array(related.prefix(30)),
+                          works: works.map { (id: $0.0, name: $0.1, russian: $0.2, year: $0.3, role: $0.4) })
+    }
+
     /// Title search (Shikimori matches partial Russian names far better than AnimeLib).
     static func search(_ query: String, limit: Int = 5) async -> [(id: Int, russian: String, name: String)] {
         var c = URLComponents(string: "/api/animes")!
@@ -285,7 +342,8 @@ enum ShikiAPI {
             }
             if let c = r.obj("character"), let p = person(c) {
                 characters.append(p)
-            } else if let o = r.obj("person"), let p = person(o) {
+            } else if let o = r.obj("person"), var p = person(o) {
+                p.isCharacter = false
                 let key = Set(r["roles"] as? [String] ?? [])
                 if !key.isDisjoint(with: ["Director", "Original Creator", "Series Composition", "Music",
                                           "Character Design", "Chief Animation Director"]) {

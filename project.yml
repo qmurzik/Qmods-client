@@ -20,6 +20,7 @@ targets:
       - path: Shared
     dependencies:
       - target: AnixQWidget
+      - target: AnixQShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.qmods.anixq
@@ -48,4 +49,20 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AnixQWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: AnixQWidget/AnixQWidget.entitlements
+        SKIP_INSTALL: YES
+
+  AnixQShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.1"
+    sources:
+      - path: AnixQShare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ru.qmods.anixq.share
+        PRODUCT_NAME: AnixQShare
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: AnixQShare/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AnixQShare/AnixQShare.entitlements
         SKIP_INSTALL: YES

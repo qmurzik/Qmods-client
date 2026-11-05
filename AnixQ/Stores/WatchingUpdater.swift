@@ -1,6 +1,8 @@
 import Foundation
 import Network
 import SwiftUI
+import UserNotifications
+import BackgroundTasks
 
 /// Checks titles the user is watching for new episodes on AnimeLib and, on Wi-Fi, pre-downloads
 /// the next unwatched ones.
@@ -63,6 +65,7 @@ final class WatchingUpdater: ObservableObject {
                 withNew.append(title)
             }
             if Self.autoDownload, onWiFi { autoDownload(title: title, fresh: fresh, library: library) }
+            await notifyIfDubbed(title: title, episodes: episodes, library: library)
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
         newEpisodes = result
@@ -86,6 +89,65 @@ final class WatchingUpdater: ObservableObject {
             DownloadManager.shared.download(title: title, episode: ep, team: team)
             DebugLog.log("updater: auto-download \(title.title) ep \(ep.number)")
         }
+    }
+
+    // MARK: "Вышла серия в вашей озвучке"
+
+    /// titleId -> highest episode number already announced.
+    private var announced: [Int: Double] = {
+        (UserDefaults.standard.dictionary(forKey: "dub.announced") as? [String: Double] ?? [:])
+            .reduce(into: [Int: Double]()) { $0[Int($1.key) ?? 0] = $1.value }
+    }()
+
+    private func saveAnnounced() {
+        UserDefaults.standard.set(Dictionary(uniqueKeysWithValues: announced.map { (String($0.key), $0.value) }),
+                                  forKey: "dub.announced")
+    }
+
+    /// Notifies when the newest episode is available with the team the user watches this title with.
+    private func notifyIfDubbed(title: Title, episodes: [LibEpisode], library: LibraryStore) async {
+        guard EpisodeNotifier.isEnabled, let last = library.lastEntry(titleId: title.id),
+              let newest = episodes.max(by: { $0.numberValue < $1.numberValue }) else { return }
+        guard let seen = announced[title.id] else {
+            // First time we see this title: remember the current state, don't announce old episodes.
+            announced[title.id] = newest.numberValue
+            saveAnnounced()
+            return
+        }
+        guard newest.numberValue > seen else { return }
+        guard let players = try? await LibAPI.players(episodeId: newest.id),
+              players.contains(where: { $0.team.id == last.teamId }) else { return }   // not dubbed yet
+        announced[title.id] = newest.numberValue
+        saveAnnounced()
+        let content = UNMutableNotificationContent()
+        content.title = title.title
+        content.body = "Вышла \(newest.number)-я серия в озвучке \(last.teamName)"
+        content.sound = .default
+        content.userInfo = ["slug": title.slugURL]
+        try? await UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "dub-\(title.id)-\(newest.number)", content: content, trigger: nil))
+        DebugLog.log("updater: notified \(title.title) ep \(newest.number) (\(last.teamName))")
+    }
+
+    // MARK: Background refresh
+
+    static let taskId = "ru.qmods.anixq.refresh"
+
+    static func registerBackgroundTask(library: @escaping () -> LibraryStore?) {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: taskId, using: nil) { task in
+            scheduleBackgroundRefresh()
+            let work = Task { @MainActor in
+                if let lib = library() { await WatchingUpdater.shared.refresh(library: lib, force: true) }
+                task.setTaskCompleted(success: true)
+            }
+            task.expirationHandler = { work.cancel() }
+        }
+    }
+
+    static func scheduleBackgroundRefresh() {
+        let req = BGAppRefreshTaskRequest(identifier: taskId)
+        req.earliestBeginDate = Date().addingTimeInterval(60 * 60)
+        try? BGTaskScheduler.shared.submit(req)
     }
 
     /// Called after an episode is watched so the badge updates immediately.

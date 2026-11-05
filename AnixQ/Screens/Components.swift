@@ -16,7 +16,45 @@ extension View {
             }
             .navigationDestination(for: CatalogRoute.self) { CatalogListView(title: $0.title, query: $0.query) }
             .navigationDestination(for: ShikiRoute.self) { ResolveShikiView(route: $0) }
+            .navigationDestination(for: PersonRoute.self) { PersonView(route: $0) }
     }
+}
+
+// MARK: - Quick actions
+
+/// Long-press menu on any poster: bookmark without opening the title, or share it.
+struct TitleQuickActions: ViewModifier {
+    let title: Title
+    @EnvironmentObject private var library: LibraryStore
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            let current = library.bookmark(for: title.slugURL)
+            ForEach([BookmarkStatus.watching, .planned, .favorite, .completed]) { s in
+                Button {
+                    library.setBookmark(title: title, status: current == s ? nil : s)
+                } label: {
+                    Label(current == s ? "Убрать из «\(s.title)»" : s.title,
+                          systemImage: current == s ? "checkmark" : s.icon)
+                }
+            }
+            if let url = URL(string: "https://anilib.me/ru/anime/\(title.slugURL)") {
+                ShareLink(item: url) { Label("Поделиться", systemImage: "square.and.arrow.up") }
+            }
+        } preview: {
+            VStack(alignment: .leading, spacing: 8) {
+                PosterImage(url: title.coverURL, radius: 12).frame(width: 200)
+                Text(title.title).font(.headline).lineLimit(2)
+                Text(title.metaLine).font(.caption).foregroundStyle(.secondary)
+            }
+            .padding()
+            .frame(width: 232)
+        }
+    }
+}
+
+extension View {
+    func titleQuickActions(_ title: Title) -> some View { modifier(TitleQuickActions(title: title)) }
 }
 
 // MARK: - Cards
@@ -80,6 +118,7 @@ struct PosterGrid: View {
             ForEach(titles) { t in
                 NavigationLink(value: t) { PosterCard(title: t) }
                     .buttonStyle(PressableStyle())
+                    .titleQuickActions(t)
                     .onAppear { if t.id == titles.last?.id { onLast?() } }
             }
         }
@@ -107,6 +146,7 @@ struct Shelf: View {
                         ForEach(titles) { t in
                             NavigationLink(value: t) { PosterCard(title: t).frame(width: width) }
                                 .buttonStyle(PressableStyle())
+                                .titleQuickActions(t)
                         }
                     }
                     .padding(.horizontal)
@@ -143,9 +183,14 @@ struct ContinueCard: View {
                 LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
-                        Image(systemName: "play.fill").font(.caption)
-                        Text("Серия \(entry.episodeNumber)").font(.subheadline.weight(.semibold))
-                        if entry.duration > 0 {
+                        Image(systemName: entry.progress > 0.92 ? "forward.end.fill" : "play.fill").font(.caption)
+                        if entry.progress > 0.92, let n = Int(entry.episodeNumber) {
+                            // Finished: offer the next episode right away.
+                            Text("Дальше · серия \(n + 1)").font(.subheadline.weight(.semibold))
+                        } else {
+                            Text("Серия \(entry.episodeNumber)").font(.subheadline.weight(.semibold))
+                        }
+                        if entry.duration > 0, entry.progress <= 0.92 {
                             Text("· осталось \(Int(max(0, entry.duration - entry.position) / 60)) мин")
                                 .font(.caption).foregroundStyle(.white.opacity(0.75))
                         }
